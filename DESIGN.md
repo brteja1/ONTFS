@@ -11,7 +11,7 @@ OntFS manages an ontology-based knowledge graph. Unlike traditional tagging syst
 ### 2. Data Model & Ontology
 OntFS leverages standard semantic web vocabularies, primarily **SKOS** (Simple Knowledge Organization System), **OWL** (Web Ontology Language), and **RDFS** (RDF Schema).
 
-*   **Entities**: Represented as URIs. Local files use the `file://` scheme, web pages use `http:///https://`, and custom abstract concepts use a custom namespace (e.g., `ontfs:Concept`).
+*   **Entities**: Represented as URIs. Local files use the `file://` scheme, web pages use `http:// or https://`, and custom abstract concepts use a custom namespace (e.g., `ontfs:Concept`).
 *   **Relations (Properties)**: Are themselves URIs in the graph. 
     *   **Standard Relations**: `skos:broader`, `skos:narrower`, `skos:related`.
     *   **Custom Relations**: Users can define new properties (e.g., `custom:dependsOn`).
