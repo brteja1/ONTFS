@@ -22,9 +22,15 @@ layer, while continuing to use RDF and `rdflib` as the storage/query foundation.
 3. Commit or reject proposals through explicit commands.
 4. Keep proposal status and transitions in a local audit file.
 
+## Milestone 3 (this change)
+
+1. Scan Python repositories for source files and imports.
+2. Record Git commit and branch provenance when available.
+3. Expose scan results through the CLI and agent context API.
+
 ## Follow-up milestones
 
-- Git-aware repository scanning and file watching.
+- File watching and incremental rescanning.
 - Fact lifecycle: verified, stale, retracted, and contradiction views.
 - Hybrid graph, text, and vector retrieval.
 - MCP and higher-level Python APIs for agent runtimes.

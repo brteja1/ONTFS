@@ -90,6 +90,10 @@ class OntFS:
     def context_json(self, entity: str, depth: int = 1, limit: int = 50):
         return json.dumps(self.context(entity, depth=depth, limit=limit), indent=2)
 
+    def scan(self, path=".", include_git=True):
+        from ontfs.scanner import scan
+        return scan(self, path=path, include_git=include_git)
+
     @property
     def proposals_path(self):
         return self.directory / self.PROPOSALS_FILE

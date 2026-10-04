@@ -62,6 +62,12 @@ def main():
     context_parser.add_argument("--depth", type=int, default=1, help="Graph traversal depth (default: 1)")
     context_parser.add_argument("--limit", type=int, default=50, help="Maximum facts to return (default: 50)")
 
+    scan_parser = subparsers.add_parser(
+        "scan", help="Index Python files, imports, and Git context for agents"
+    )
+    scan_parser.add_argument("path", nargs="?", default=".", help="Directory or Python file to scan")
+    scan_parser.add_argument("--no-git", action="store_true", help="Do not record Git commit and branch")
+
     propose_parser = subparsers.add_parser(
         "propose-link", help="Create a pending link proposal without changing the graph"
     )
@@ -126,6 +132,11 @@ def main():
     elif args.command == "context":
         try:
             print(ontfs.context_json(args.entity, depth=args.depth, limit=args.limit))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "scan":
+        try:
+            print(json.dumps(ontfs.scan(args.path, include_git=not args.no_git), indent=2))
         except ValueError as e:
             parser.error(str(e))
     elif args.command == "propose-link":

@@ -2,6 +2,7 @@ import os
 import tempfile
 import json
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from ontfs.core import OntFS
 
@@ -126,6 +127,24 @@ class TestOntFSCore(unittest.TestCase):
         rejected = self.ontfs.reject_proposal(rejected["id"], "Not supported by evidence")
         self.assertEqual(rejected["status"], "rejected")
         self.assertEqual(rejected["rejection_reason"], "Not supported by evidence")
+
+    def test_scan_indexes_python_imports_and_git_context(self):
+        Path(self.test_dir.name, "main.py").write_text(
+            "import os\nfrom pkg.helpers import run\n", encoding="utf-8"
+        )
+        Path(self.test_dir.name, "pkg.py").write_text("VALUE = 1\n", encoding="utf-8")
+        git = {"root": self.test_dir.name, "commit": "abc123", "branch": "main"}
+        with patch("ontfs.scanner._git_info", return_value=git):
+            result = self.ontfs.scan()
+
+        self.assertEqual(result["scanned"], 2)
+        self.assertEqual(result["imports"], 2)
+        self.assertEqual(result["git"]["commit"], "abc123")
+        predicates = {
+            item["predicate"] for item in self.ontfs.context("./main.py")["facts"]
+        }
+        self.assertIn("http://ontfs.example.org/custom#imports", predicates)
+        self.assertIn("http://ontfs.example.org/custom#gitCommit", predicates)
 
 
     def test_batch_relations(self):

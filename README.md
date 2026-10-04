@@ -101,3 +101,13 @@ ontfs commit-proposal <proposal-id>
 Use `ontfs reject-proposal <proposal-id> --reason "..."` to reject it. Proposal
 status transitions and commit/rejection events are stored in
 `.ontfs.proposals.json`.
+
+ONTFS can also build an initial codebase graph from Python files:
+
+```bash
+ontfs scan .
+```
+
+The scanner records source files, imported top-level modules, and the current
+Git commit and branch when the path is inside a Git repository. Use
+`ontfs scan . --no-git` to omit Git metadata.

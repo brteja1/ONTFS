@@ -127,3 +127,17 @@ ontfs reject-proposal <proposal-id> --reason "Evidence is insufficient"
 
 Proposal records and their status history are stored in
 `.ontfs.proposals.json`; committed facts remain in the RDF graph.
+
+## 8. Repository scanning
+
+The scanner creates useful initial context for coding agents without requiring
+manual links:
+
+```bash
+ontfs scan .
+```
+
+Currently it indexes Python files, top-level imports, and Git commit/branch
+metadata. Scan results use ordinary RDF relationships, so they are available
+through both `context` and SPARQL. Use `--no-git` when Git provenance is not
+needed. File watching and incremental rescanning are not yet implemented.
