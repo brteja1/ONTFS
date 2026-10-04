@@ -35,6 +35,14 @@ and returns JSON containing both relationships and their evidence. This keeps
 the RDF/SPARQL compatibility of the core graph while providing a higher-level
 agent retrieval interface.
 
+### 3.2 Safe mutation workflow
+
+Agent mutations can be stored as pending JSON proposals rather than immediately
+changing the graph. Validation checks the operation shape and metadata before a
+proposal is committed. Explicit commit and rejection commands record status
+transitions and timestamps in `.ontfs.proposals.json`, providing a small audit
+boundary around agent-written facts.
+
 ### 4. CLI Interface Design
 The CLI is designed to be intuitive, borrowing ergonomic concepts from HTFS but applying them to a general graph model.
 

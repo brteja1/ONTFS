@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 from ontfs.core import OntFS
 
@@ -61,6 +62,32 @@ def main():
     context_parser.add_argument("--depth", type=int, default=1, help="Graph traversal depth (default: 1)")
     context_parser.add_argument("--limit", type=int, default=50, help="Maximum facts to return (default: 50)")
 
+    propose_parser = subparsers.add_parser(
+        "propose-link", help="Create a pending link proposal without changing the graph"
+    )
+    propose_parser.add_argument("subject")
+    propose_parser.add_argument("predicate")
+    propose_parser.add_argument("object")
+    propose_parser.add_argument("--literal", action="store_true")
+    propose_parser.add_argument("--source")
+    propose_parser.add_argument("--confidence", type=float)
+    propose_parser.add_argument("--asserted-by")
+    propose_parser.add_argument("--note")
+    propose_parser.add_argument("--observed-at")
+
+    proposals_parser = subparsers.add_parser("proposals", help="List pending or completed proposals")
+    proposals_parser.add_argument("--status", choices=["proposed", "committed", "rejected"])
+
+    validate_parser = subparsers.add_parser("validate-proposal", help="Validate a pending proposal")
+    validate_parser.add_argument("proposal_id")
+
+    commit_parser = subparsers.add_parser("commit-proposal", help="Validate and apply a pending proposal")
+    commit_parser.add_argument("proposal_id")
+
+    reject_parser = subparsers.add_parser("reject-proposal", help="Reject a pending proposal")
+    reject_parser.add_argument("proposal_id")
+    reject_parser.add_argument("--reason")
+
     args = parser.parse_args()
     ontfs = OntFS()
 
@@ -99,6 +126,33 @@ def main():
     elif args.command == "context":
         try:
             print(ontfs.context_json(args.entity, depth=args.depth, limit=args.limit))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "propose-link":
+        try:
+            print(json.dumps(ontfs.propose_link(
+                args.subject, args.predicate, args.object,
+                obj_is_literal=args.literal, source=args.source,
+                confidence=args.confidence, asserted_by=args.asserted_by,
+                note=args.note, observed_at=args.observed_at,
+            ), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "proposals":
+        print(json.dumps(ontfs.list_proposals(status=args.status), indent=2))
+    elif args.command == "validate-proposal":
+        try:
+            print(json.dumps(ontfs.validate_proposal(args.proposal_id), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "commit-proposal":
+        try:
+            print(json.dumps(ontfs.commit_proposal(args.proposal_id), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "reject-proposal":
+        try:
+            print(json.dumps(ontfs.reject_proposal(args.proposal_id, args.reason), indent=2))
         except ValueError as e:
             parser.error(str(e))
     else:

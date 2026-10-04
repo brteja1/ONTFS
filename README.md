@@ -87,3 +87,17 @@ The response includes neighboring RDF facts and their evidence, confidence,
 fact ID, and observation time. This is intended as the first layer of an
 agent-native memory workflow; repository scanning, fact validation, and
 proposal/commit workflows are described in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+
+Agents can stage a mutation for review before it changes the graph:
+
+```bash
+proposal=$(ontfs propose-link ./service.py custom:dependsOn ./database.py \
+  --source ./architecture.md --confidence 0.9)
+ontfs proposals --status proposed
+ontfs validate-proposal <proposal-id>
+ontfs commit-proposal <proposal-id>
+```
+
+Use `ontfs reject-proposal <proposal-id> --reason "..."` to reject it. Proposal
+status transitions and commit/rejection events are stored in
+`.ontfs.proposals.json`.

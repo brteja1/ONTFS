@@ -106,6 +106,27 @@ class TestOntFSCore(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ontfs.remember("a", "custom:rel", "b", confidence=1.1)
 
+    def test_proposal_requires_commit_and_keeps_audit_history(self):
+        proposal = self.ontfs.propose_link(
+            "./service.py", "custom:dependsOn", "./database.py",
+            source="./architecture.md", confidence=0.8,
+            asserted_by="review-agent",
+        )
+        self.assertEqual(proposal["status"], "proposed")
+        self.assertEqual(list(self.ontfs.graph.graph.triples((None, None, None))), [])
+        self.assertEqual(self.ontfs.validate_proposal(proposal["id"])["valid"], True)
+
+        committed = self.ontfs.commit_proposal(proposal["id"])
+        self.assertEqual(committed["status"], "committed")
+        self.assertTrue(committed["fact_id"])
+        self.assertEqual(len(self.ontfs.context("./service.py")["facts"]), 1)
+        self.assertEqual(len(committed["history"]), 2)
+
+        rejected = self.ontfs.propose_link("./a", "custom:rel", "./b")
+        rejected = self.ontfs.reject_proposal(rejected["id"], "Not supported by evidence")
+        self.assertEqual(rejected["status"], "rejected")
+        self.assertEqual(rejected["rejection_reason"], "Not supported by evidence")
+
 
     def test_batch_relations(self):
         import json

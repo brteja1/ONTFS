@@ -1,9 +1,13 @@
 import os
 import json
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from ontfs.rdf_handler import OntFSGraph
 
 class OntFS:
+    PROPOSALS_FILE = ".ontfs.proposals.json"
+
     def __init__(self, directory: str = "."):
         self.directory = Path(directory).resolve()
         # Lazily load graph to avoid error if not initialized for some commands
@@ -85,6 +89,141 @@ class OntFS:
 
     def context_json(self, entity: str, depth: int = 1, limit: int = 50):
         return json.dumps(self.context(entity, depth=depth, limit=limit), indent=2)
+
+    @property
+    def proposals_path(self):
+        return self.directory / self.PROPOSALS_FILE
+
+    def _load_proposals(self):
+        if not self.proposals_path.exists():
+            return []
+        with self.proposals_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, list):
+            raise ValueError(f"{self.PROPOSALS_FILE} must contain a JSON array")
+        return data
+
+    def _save_proposals(self, proposals):
+        with self.proposals_path.open("w", encoding="utf-8") as handle:
+            json.dump(proposals, handle, indent=2)
+            handle.write("\n")
+
+    @staticmethod
+    def _now():
+        return datetime.now(timezone.utc).isoformat()
+
+    def propose_link(self, subject: str, predicate: str, obj: str,
+                     obj_is_literal: bool = False, source: str = None,
+                     confidence: float = None, asserted_by: str = None,
+                     note: str = None, observed_at: str = None):
+        """Create a pending link proposal without changing the RDF graph."""
+        proposal = {
+            "id": uuid.uuid4().hex[:16],
+            "operation": "link",
+            "status": "proposed",
+            "created_at": self._now(),
+            "subject": subject,
+            "predicate": predicate,
+            "object": obj,
+            "literal": obj_is_literal,
+            "source": source,
+            "confidence": confidence,
+            "asserted_by": asserted_by,
+            "note": note,
+            "observed_at": observed_at,
+            "history": [{"event": "proposed", "at": self._now()}],
+        }
+        self._validate_proposal(proposal)
+        proposals = self._load_proposals()
+        proposals.append(proposal)
+        self._save_proposals(proposals)
+        return proposal
+
+    def _validate_proposal(self, proposal):
+        required = ("subject", "predicate", "object")
+        errors = [f"missing {field}" for field in required if not proposal.get(field)]
+        confidence = proposal.get("confidence")
+        if confidence is not None:
+            try:
+                confidence = float(confidence)
+                if not 0.0 <= confidence <= 1.0:
+                    errors.append("confidence must be between 0 and 1")
+            except (TypeError, ValueError):
+                errors.append("confidence must be a number between 0 and 1")
+        if proposal.get("operation") != "link":
+            errors.append("unsupported operation")
+        if errors:
+            raise ValueError("; ".join(errors))
+        # URI resolution is also a useful validation step for unknown prefixes.
+        self.graph.resolve_uri(proposal["subject"])
+        self.graph.resolve_uri(proposal["predicate"])
+        if not proposal.get("literal"):
+            self.graph.resolve_uri(proposal["object"])
+        return True
+
+    def list_proposals(self, status=None):
+        proposals = self._load_proposals()
+        if status is not None:
+            proposals = [p for p in proposals if p.get("status") == status]
+        return proposals
+
+    def validate_proposal(self, proposal_id):
+        proposal = self._find_proposal(proposal_id)
+        try:
+            self._validate_proposal(proposal)
+        except ValueError as error:
+            return {"id": proposal_id, "valid": False, "error": str(error)}
+        return {"id": proposal_id, "valid": True, "status": proposal["status"]}
+
+    def _find_proposal(self, proposal_id):
+        for proposal in self._load_proposals():
+            if proposal.get("id") == proposal_id:
+                return proposal
+        raise ValueError(f"proposal not found: {proposal_id}")
+
+    def _update_proposal(self, proposal):
+        proposals = self._load_proposals()
+        for index, current in enumerate(proposals):
+            if current.get("id") == proposal.get("id"):
+                proposals[index] = proposal
+                self._save_proposals(proposals)
+                return
+        raise ValueError(f"proposal not found: {proposal.get('id')}")
+
+    def commit_proposal(self, proposal_id):
+        proposal = self._find_proposal(proposal_id)
+        if proposal.get("status") != "proposed":
+            raise ValueError(f"proposal is already {proposal.get('status')}")
+        self._validate_proposal(proposal)
+        fact_id = self.remember(
+            proposal["subject"], proposal["predicate"], proposal["object"],
+            obj_is_literal=proposal.get("literal", False),
+            source=proposal.get("source"), confidence=proposal.get("confidence"),
+            asserted_by=proposal.get("asserted_by"), note=proposal.get("note"),
+            observed_at=proposal.get("observed_at"),
+        )
+        proposal["status"] = "committed"
+        proposal["fact_id"] = fact_id
+        proposal["committed_at"] = self._now()
+        proposal.setdefault("history", []).append({
+            "event": "committed", "at": proposal["committed_at"], "fact_id": fact_id,
+        })
+        self._update_proposal(proposal)
+        return proposal
+
+    def reject_proposal(self, proposal_id, reason=None):
+        proposal = self._find_proposal(proposal_id)
+        if proposal.get("status") != "proposed":
+            raise ValueError(f"proposal is already {proposal.get('status')}")
+        proposal["status"] = "rejected"
+        proposal["rejected_at"] = self._now()
+        if reason:
+            proposal["rejection_reason"] = reason
+        proposal.setdefault("history", []).append({
+            "event": "rejected", "at": proposal["rejected_at"], "reason": reason,
+        })
+        self._update_proposal(proposal)
+        return proposal
 
 
     def batch_links(self, file_path: str):

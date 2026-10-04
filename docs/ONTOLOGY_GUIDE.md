@@ -101,3 +101,29 @@ Each returned fact includes its subject, predicate, object, fact ID, source,
 confidence, asserting agent, note, and observation time when available. The
 depth and limit bounds are intended to keep retrieved context predictable and
 within an agent's token budget.
+
+## 7. Safe agent mutations
+
+Agents can stage a proposed link without modifying `.ontfs.ttl`:
+
+```bash
+ontfs propose-link ./service.py custom:dependsOn ./database.py \
+  --source ./architecture.md --confidence 0.9
+```
+
+Review and apply it explicitly:
+
+```bash
+ontfs proposals --status proposed
+ontfs validate-proposal <proposal-id>
+ontfs commit-proposal <proposal-id>
+```
+
+Or reject it with an audit reason:
+
+```bash
+ontfs reject-proposal <proposal-id> --reason "Evidence is insufficient"
+```
+
+Proposal records and their status history are stored in
+`.ontfs.proposals.json`; committed facts remain in the RDF graph.

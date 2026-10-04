@@ -15,11 +15,17 @@ layer, while continuing to use RDF and `rdflib` as the storage/query foundation.
 5. Keep existing CLI and Python APIs compatible, including the existing batch
    commands.
 
+## Milestone 2 (this change)
+
+1. Create pending link proposals without mutating the graph.
+2. Validate proposals before commit, including metadata constraints.
+3. Commit or reject proposals through explicit commands.
+4. Keep proposal status and transitions in a local audit file.
+
 ## Follow-up milestones
 
 - Git-aware repository scanning and file watching.
-- Fact lifecycle: proposed, verified, stale, retracted, and contradiction views.
-- Dry-run/proposal/commit mutation workflow with audit history.
+- Fact lifecycle: verified, stale, retracted, and contradiction views.
 - Hybrid graph, text, and vector retrieval.
 - MCP and higher-level Python APIs for agent runtimes.
 
