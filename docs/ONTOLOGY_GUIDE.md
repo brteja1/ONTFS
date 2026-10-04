@@ -61,3 +61,12 @@ You can query the graph using standard SPARQL syntax.
 ```bash
 ontfs query "SELECT ?s WHERE { ?s custom:dependsOn <file:///path/to/database.py> }"
 ```
+
+### Batch Operations
+To improve performance when manipulating a large number of relations or links, use the batch commands which accept a JSON file:
+
+- **Add Multiple Relations**: `ontfs add-relations relations.json`
+- **Add Multiple Links**: `ontfs batch-link links.json`
+- **Remove Multiple Links**: `ontfs batch-unlink unlinks.json`
+
+The file format is an array of objects corresponding to the arguments of the individual commands.

@@ -1,5 +1,6 @@
 import os
 import tempfile
+import json
 import unittest
 from pathlib import Path
 from ontfs.core import OntFS
@@ -79,6 +80,76 @@ class TestOntFSCore(unittest.TestCase):
             "http://ontfs.example.org/custom#tag:Parent"
         }
         self.assertEqual(ancestors, expected)
+
+    def test_remember_records_provenance_and_context(self):
+        fact_id = self.ontfs.remember(
+            "./service.py", "custom:dependsOn", "./database.py",
+            source="./architecture.md", confidence=0.9,
+            asserted_by="build-agent", note="Found in architecture document",
+        )
+        self.assertEqual(len(fact_id), 20)
+
+        context = self.ontfs.context("./service.py", depth=1)
+        self.assertEqual(len(context["facts"]), 1)
+        fact = context["facts"][0]
+        self.assertEqual(fact["fact"]["id"], fact_id)
+        self.assertEqual(fact["fact"]["confidence"], "0.9")
+        self.assertEqual(fact["fact"]["assertedBy"], "build-agent")
+        self.assertTrue(fact["fact"]["source"].endswith("/architecture.md"))
+
+        # Metadata survives a reload from the portable Turtle file.
+        reloaded = OntFS(directory=self.test_dir.name)
+        context_json = reloaded.context_json("./service.py")
+        self.assertEqual(json.loads(context_json)["facts"][0]["fact"]["id"], fact_id)
+
+    def test_confidence_must_be_in_range(self):
+        with self.assertRaises(ValueError):
+            self.ontfs.remember("a", "custom:rel", "b", confidence=1.1)
+
+
+    def test_batch_relations(self):
+        import json
+        batch_file = Path(self.test_dir.name) / "relations.json"
+        with open(batch_file, "w") as f:
+            json.dump([
+                {"uri": "custom:isRelatedTo", "type": "object", "symmetric": True},
+                {"uri": "custom:isFriendOf", "subprop_of": "custom:isRelatedTo"}
+            ], f)
+
+        self.ontfs.add_relations(str(batch_file))
+
+        # Verify relations are added
+        query = f"SELECT ?p ?o WHERE {{ ?p a <http://www.w3.org/2002/07/owl#ObjectProperty> }}"
+        results = list(self.ontfs.graph.query_graph(query))
+        self.assertTrue(len(results) > 0)
+
+    def test_batch_links_and_unlinks(self):
+        import json
+        rel = "custom:dependsOn"
+
+        links_file = Path(self.test_dir.name) / "links.json"
+        with open(links_file, "w") as f:
+            json.dump([
+                {"subject": "./file1.txt", "predicate": rel, "object": "./file2.txt"},
+                {"subject": "./file2.txt", "predicate": rel, "object": "./file3.txt"}
+            ], f)
+
+        self.ontfs.batch_links(str(links_file))
+
+        query = f"SELECT ?o WHERE {{ ?s <http://ontfs.example.org/custom#dependsOn> ?o }}"
+        results = list(self.ontfs.graph.query_graph(query))
+        self.assertEqual(len(results), 2)
+
+        unlinks_file = Path(self.test_dir.name) / "unlinks.json"
+        with open(unlinks_file, "w") as f:
+            json.dump([
+                {"subject": "./file1.txt", "predicate": rel, "object": "./file2.txt"}
+            ], f)
+
+        self.ontfs.batch_unlinks(str(unlinks_file))
+
+        results_after = list(self.ontfs.graph.query_graph(query))
+        self.assertEqual(len(results_after), 1)
 
 if __name__ == "__main__":
     unittest.main()

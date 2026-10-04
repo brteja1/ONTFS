@@ -43,8 +43,14 @@ pip install -e .
 # Initialize the graph in the current directory
 ontfs init
 
+
 # Define a transitive relationship
 ontfs add-relation custom:dependsOn --transitive
+
+# Or batch define relations and links using JSON
+ontfs add-relations relations.json
+ontfs batch-link links.json
+
 
 # Link files
 ontfs link ./backend.py custom:dependsOn ./database.py
@@ -55,3 +61,29 @@ Run the test suite using the provided bash script:
 ```bash
 ./tests/run_tests.sh
 ```
+
+## 🤖 Agent Context and Evidence
+
+ONTFS can retain explainability metadata alongside an asserted relationship.
+The original RDF triple remains available to normal SPARQL clients, while the
+statement is also recorded with a stable fact ID, observation time, and any
+optional evidence supplied by the caller.
+
+```bash
+ontfs link ./service.py custom:dependsOn ./database.py \
+  --source ./architecture.md \
+  --confidence 0.9 \
+  --asserted-by build-agent \
+  --note "Found in architecture document"
+```
+
+Agents can retrieve bounded JSON context without constructing a SPARQL query:
+
+```bash
+ontfs context ./service.py --depth 2 --limit 30
+```
+
+The response includes neighboring RDF facts and their evidence, confidence,
+fact ID, and observation time. This is intended as the first layer of an
+agent-native memory workflow; repository scanning, fact validation, and
+proposal/commit workflows are described in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
