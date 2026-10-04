@@ -70,3 +70,34 @@ To improve performance when manipulating a large number of relations or links, u
 - **Remove Multiple Links**: `ontfs batch-unlink unlinks.json`
 
 The file format is an array of objects corresponding to the arguments of the individual commands.
+
+## 5. Evidence-backed facts for agents
+
+Every linked RDF statement receives a stable fact identifier and observation
+timestamp. Agents can attach evidence and attribution when creating a link:
+
+```bash
+ontfs link ./service.py custom:dependsOn ./database.py \
+  --source ./architecture.md \
+  --confidence 0.9 \
+  --asserted-by build-agent \
+  --note "Found in architecture document"
+```
+
+`--confidence` must be between `0` and `1`. The original direct RDF triple is
+preserved for normal SPARQL consumers; metadata is represented using standard
+RDF statement reification and can be returned to an agent as evidence.
+
+## 6. Agent context retrieval
+
+The `context` command provides bounded JSON around an entity without requiring
+an agent to construct SPARQL:
+
+```bash
+ontfs context ./service.py --depth 2 --limit 30
+```
+
+Each returned fact includes its subject, predicate, object, fact ID, source,
+confidence, asserting agent, note, and observation time when available. The
+depth and limit bounds are intended to keep retrieved context predictable and
+within an agent's token budget.

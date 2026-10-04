@@ -25,6 +25,16 @@ The system consists of the following layers:
 3.  **RDF Handler (`rdf_handler.py`)**: Wraps the `rdflib` library. It manages loading/saving the `.ontfs.ttl` file, graph updates, and SPARQL query execution.
 4.  **Namespace Manager (`namespaces.py`)**: Manages the binding of prefixes (like `skos:`, `owl:`, `rdf:`, and `custom:`) so users can type concise commands instead of full URIs.
 
+### 3.1 Agent context and evidence
+
+ONTFS preserves each asserted triple and also records a stable fact identifier
+using standard RDF statement reification. Optional source, confidence,
+asserting-agent, note, and observation-time metadata make graph context
+explainable to an AI agent. The `context` command performs bounded traversal
+and returns JSON containing both relationships and their evidence. This keeps
+the RDF/SPARQL compatibility of the core graph while providing a higher-level
+agent retrieval interface.
+
 ### 4. CLI Interface Design
 The CLI is designed to be intuitive, borrowing ergonomic concepts from HTFS but applying them to a general graph model.
 
