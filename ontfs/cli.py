@@ -73,6 +73,15 @@ def main():
     context_parser.add_argument("--depth", type=int, default=1, help="Graph traversal depth (default: 1)")
     context_parser.add_argument("--limit", type=int, default=50, help="Maximum facts to return (default: 50)")
 
+    search_parser = subparsers.add_parser(
+        "search", help="Search text and boost graph-related files"
+    )
+    search_parser.add_argument("query")
+    search_parser.add_argument("--path", default=".")
+    search_parser.add_argument("--limit", type=int, default=20)
+    search_parser.add_argument("--related-to", help="Entity whose graph neighborhood should be boosted")
+    search_parser.add_argument("--depth", type=int, default=1)
+
     scan_parser = subparsers.add_parser(
         "scan", help="Index Python files, imports, and Git context for agents"
     )
@@ -166,6 +175,14 @@ def main():
     elif args.command == "context":
         try:
             print(ontfs.context_json(args.entity, depth=args.depth, limit=args.limit))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "search":
+        try:
+            print(json.dumps(ontfs.search(
+                args.query, path=args.path, limit=args.limit,
+                related_to=args.related_to, depth=args.depth,
+            ), indent=2))
         except ValueError as e:
             parser.error(str(e))
     elif args.command == "scan":

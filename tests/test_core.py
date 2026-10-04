@@ -189,6 +189,27 @@ class TestOntFSCore(unittest.TestCase):
         self.assertEqual(self.ontfs.fact(first)["status"], "disputed")
         self.assertEqual(self.ontfs.fact(second)["status"], "disputed")
 
+    def test_hybrid_search_boosts_graph_related_documents(self):
+        Path(self.test_dir.name, "design.md").write_text(
+            "Database migration plan and rollback steps.\n", encoding="utf-8"
+        )
+        Path(self.test_dir.name, "notes.md").write_text(
+            "Database migration plan and database migration notes.\n", encoding="utf-8"
+        )
+        self.ontfs.link("./design.md", "custom:documents", "./service.py")
+        results = self.ontfs.search(
+            "database migration", related_to="./service.py", limit=2
+        )["results"]
+        self.assertEqual(results[0]["path"], str(Path(self.test_dir.name, "design.md")))
+        self.assertEqual(results[0]["graph_boost"], 5)
+        self.assertIn("rollback", results[0]["snippet"])
+
+    def test_search_validates_query_and_limit(self):
+        with self.assertRaises(ValueError):
+            self.ontfs.search("", limit=1)
+        with self.assertRaises(ValueError):
+            self.ontfs.search("anything", limit=0)
+
 
     def test_batch_relations(self):
         import json

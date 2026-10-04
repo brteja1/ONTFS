@@ -137,3 +137,14 @@ ontfs contradictions --mark
 Supported statuses are `asserted`, `verified`, `stale`, `disputed`, and
 `retracted`. Retraction preserves the fact record and its audit metadata but
 removes the assertion from active graph context.
+
+ONTFS also provides bounded hybrid text/graph search:
+
+```bash
+ontfs search "database migration" \
+  --related-to ./service.py --limit 10
+```
+
+It searches supported local text files, returns snippets, and boosts files
+connected to the requested entity through the knowledge graph. Embedding-based
+vector ranking is still a future extension.

@@ -92,6 +92,13 @@ class OntFS:
     def context_json(self, entity: str, depth: int = 1, limit: int = 50):
         return json.dumps(self.context(entity, depth=depth, limit=limit), indent=2)
 
+    def search(self, query, path=".", limit=20, related_to=None, depth=1):
+        from ontfs.search import search
+        return search(
+            self, query, path=path, limit=limit,
+            related_to=related_to, depth=depth,
+        )
+
     def fact(self, fact_id):
         return self.graph.fact_record(fact_id)
 

@@ -42,9 +42,15 @@ layer, while continuing to use RDF and `rdflib` as the storage/query foundation.
 3. Preserve retracted fact history while removing it from active context.
 4. Detect and optionally mark conflicting object values as disputed.
 
+## Milestone 6 (this change)
+
+1. Search local text files with bounded lexical matching and snippets.
+2. Boost results connected to a requested graph neighborhood.
+3. Return compact JSON suitable for agent context selection.
+
 ## Follow-up milestones
 
-- Hybrid graph, text, and vector retrieval.
+- Vector retrieval and embedding-backed ranking.
 - MCP and higher-level Python APIs for agent runtimes.
 
 ## Success criteria

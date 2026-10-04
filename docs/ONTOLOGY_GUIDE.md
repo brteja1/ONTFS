@@ -169,3 +169,15 @@ Contradiction detection groups active facts by subject and predicate and
 reports different object values. Marking a conflict changes the involved facts
 to `disputed`. Retraction keeps the reified fact and its metadata for audit,
 but removes the direct assertion from agent context.
+
+## 10. Hybrid search
+
+Use `search` when an agent needs both textual relevance and graph context:
+
+```bash
+ontfs search "database migration" --related-to ./service.py --limit 10
+```
+
+Results include a score, text-hit count, graph boost, and a short snippet. The
+current implementation uses bounded local lexical search; vector embeddings
+and semantic ranking are not yet included.
