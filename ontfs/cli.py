@@ -35,6 +35,7 @@ def main():
     link_parser.add_argument("--asserted-by", help="Agent or user asserting the fact")
     link_parser.add_argument("--note", help="Short explanation for the assertion")
     link_parser.add_argument("--observed-at", help="Observation timestamp in ISO-8601 format")
+    link_parser.add_argument("--expires-at", help="ISO-8601 time after which the fact becomes stale")
 
 
     # Batch-Link
@@ -54,6 +55,16 @@ def main():
     # Query
     query_parser = subparsers.add_parser("query", help="Execute a raw SPARQL query against the graph")
     query_parser.add_argument("query_str", help="The SPARQL query string")
+
+    fact_parser = subparsers.add_parser("fact", help="Show a fact and its lifecycle metadata")
+    fact_parser.add_argument("fact_id")
+    status_parser = subparsers.add_parser("fact-status", help="Change a fact lifecycle status")
+    status_parser.add_argument("fact_id")
+    status_parser.add_argument("status", choices=["asserted", "verified", "stale", "retracted", "disputed"])
+    status_parser.add_argument("--reason")
+    refresh_parser = subparsers.add_parser("refresh-facts", help="Mark expired facts as stale")
+    contradictions_parser = subparsers.add_parser("contradictions", help="Find conflicting facts")
+    contradictions_parser.add_argument("--mark", action="store_true", help="Mark conflicting facts as disputed")
 
     context_parser = subparsers.add_parser(
         "context", help="Return bounded JSON context around an entity for an agent"
@@ -88,6 +99,7 @@ def main():
     propose_parser.add_argument("--asserted-by")
     propose_parser.add_argument("--note")
     propose_parser.add_argument("--observed-at")
+    propose_parser.add_argument("--expires-at")
 
     proposals_parser = subparsers.add_parser("proposals", help="List pending or completed proposals")
     proposals_parser.add_argument("--status", choices=["proposed", "committed", "rejected"])
@@ -119,12 +131,12 @@ def main():
     elif args.command == "add-relations":
         ontfs.add_relations(args.file)
     elif args.command == "link":
-        if any((args.source, args.confidence is not None, args.asserted_by, args.note, args.observed_at)):
+        if any((args.source, args.confidence is not None, args.asserted_by, args.note, args.observed_at, args.expires_at)):
             ontfs.remember(
                 args.subject, args.predicate, args.object,
                 obj_is_literal=args.literal, source=args.source,
                 confidence=args.confidence, asserted_by=args.asserted_by,
-                note=args.note, observed_at=args.observed_at,
+                note=args.note, observed_at=args.observed_at, expires_at=args.expires_at,
             )
             print(f"Linked with evidence: {args.subject} -[{args.predicate}]-> {args.object}")
         else:
@@ -137,6 +149,20 @@ def main():
         ontfs.batch_unlinks(args.file)
     elif args.command == "query":
         ontfs.query(args.query_str)
+    elif args.command == "fact":
+        try:
+            print(json.dumps(ontfs.fact(args.fact_id), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "fact-status":
+        try:
+            print(json.dumps(ontfs.set_fact_status(args.fact_id, args.status, args.reason), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "refresh-facts":
+        print(json.dumps({"stale": ontfs.refresh_stale()}, indent=2))
+    elif args.command == "contradictions":
+        print(json.dumps(ontfs.contradictions(mark=args.mark), indent=2))
     elif args.command == "context":
         try:
             print(ontfs.context_json(args.entity, depth=args.depth, limit=args.limit))
@@ -162,7 +188,7 @@ def main():
                 args.subject, args.predicate, args.object,
                 obj_is_literal=args.literal, source=args.source,
                 confidence=args.confidence, asserted_by=args.asserted_by,
-                note=args.note, observed_at=args.observed_at,
+                note=args.note, observed_at=args.observed_at, expires_at=args.expires_at,
             ), indent=2))
         except ValueError as e:
             parser.error(str(e))

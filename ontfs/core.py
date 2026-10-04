@@ -68,7 +68,8 @@ class OntFS:
     def remember(self, subject: str, predicate: str, obj: str,
                  obj_is_literal: bool = False, source: str = None,
                  confidence: float = None, asserted_by: str = None,
-                 note: str = None, observed_at: str = None):
+                 note: str = None, observed_at: str = None,
+                 status: str = "asserted", expires_at: str = None):
         """Assert a fact and attach agent-oriented explainability metadata."""
         s = self.graph.resolve_uri(subject)
         p = self.graph.resolve_uri(predicate)
@@ -80,6 +81,7 @@ class OntFS:
         fact_id = self.graph.record_fact(
             s, p, o, source=source, confidence=confidence,
             asserted_by=asserted_by, note=note, observed_at=observed_at,
+            status=status, expires_at=expires_at,
         )
         self.graph.save()
         return fact_id
@@ -89,6 +91,30 @@ class OntFS:
 
     def context_json(self, entity: str, depth: int = 1, limit: int = 50):
         return json.dumps(self.context(entity, depth=depth, limit=limit), indent=2)
+
+    def fact(self, fact_id):
+        return self.graph.fact_record(fact_id)
+
+    def set_fact_status(self, fact_id, status, reason=None):
+        record = self.graph.set_fact_status(fact_id, status, reason=reason)
+        self.graph.save()
+        return record
+
+    def refresh_stale(self):
+        stale = self.graph.refresh_stale()
+        self.graph.save()
+        return stale
+
+    def contradictions(self, mark=False):
+        conflicts = self.graph.contradictions()
+        if mark:
+            for conflict in conflicts:
+                for fact in conflict["facts"]:
+                    self.graph.set_fact_status(
+                        fact["id"], "disputed", "conflicting object for subject and predicate"
+                    )
+            self.graph.save()
+        return conflicts
 
     def scan(self, path=".", include_git=True):
         from ontfs.scanner import scan
@@ -126,7 +152,8 @@ class OntFS:
     def propose_link(self, subject: str, predicate: str, obj: str,
                      obj_is_literal: bool = False, source: str = None,
                      confidence: float = None, asserted_by: str = None,
-                     note: str = None, observed_at: str = None):
+                     note: str = None, observed_at: str = None,
+                     expires_at: str = None):
         """Create a pending link proposal without changing the RDF graph."""
         proposal = {
             "id": uuid.uuid4().hex[:16],
@@ -142,6 +169,7 @@ class OntFS:
             "asserted_by": asserted_by,
             "note": note,
             "observed_at": observed_at,
+            "expires_at": expires_at,
             "history": [{"event": "proposed", "at": self._now()}],
         }
         self._validate_proposal(proposal)
@@ -211,7 +239,7 @@ class OntFS:
             obj_is_literal=proposal.get("literal", False),
             source=proposal.get("source"), confidence=proposal.get("confidence"),
             asserted_by=proposal.get("asserted_by"), note=proposal.get("note"),
-            observed_at=proposal.get("observed_at"),
+            observed_at=proposal.get("observed_at"), expires_at=proposal.get("expires_at"),
         )
         proposal["status"] = "committed"
         proposal["fact_id"] = fact_id

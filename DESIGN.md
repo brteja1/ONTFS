@@ -43,6 +43,15 @@ proposal is committed. Explicit commit and rejection commands record status
 transitions and timestamps in `.ontfs.proposals.json`, providing a small audit
 boundary around agent-written facts.
 
+### 3.3 Fact lifecycle
+
+Reified facts carry a lifecycle status. Expiration metadata can transition
+asserted or verified facts to `stale`; conflicting object values can be
+reported and marked `disputed`; and `retracted` facts retain their history
+while their direct assertion is removed from active context. This gives agents
+an explicit trust and review model instead of treating every triple as equally
+current.
+
 ### 4. CLI Interface Design
 The CLI is designed to be intuitive, borrowing ergonomic concepts from HTFS but applying them to a general graph model.
 

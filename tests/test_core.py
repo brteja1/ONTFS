@@ -2,6 +2,7 @@ import os
 import tempfile
 import json
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from pathlib import Path
 from ontfs.core import OntFS
@@ -162,6 +163,31 @@ class TestOntFSCore(unittest.TestCase):
     def test_watch_rejects_invalid_interval(self):
         with self.assertRaises(ValueError):
             self.ontfs.watch(interval=-1, iterations=0)
+
+    def test_fact_lifecycle_staleness_retraction_and_contradictions(self):
+        expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        stale_id = self.ontfs.remember(
+            "./service.py", "custom:expires", "./old-config.py", expires_at=expired
+        )
+        self.assertEqual(self.ontfs.refresh_stale(), [stale_id])
+        self.assertEqual(self.ontfs.fact(stale_id)["status"], "stale")
+
+        retract_id = self.ontfs.remember("./old.py", "custom:status", "obsolete")
+        self.ontfs.set_fact_status(retract_id, "retracted", "superseded")
+        self.assertEqual(self.ontfs.fact(retract_id)["status"], "retracted")
+        self.assertEqual(self.ontfs.context("./old.py")["facts"], [])
+
+        first = self.ontfs.remember(
+            "./service.py", "custom:owner", "team-a", obj_is_literal=True
+        )
+        second = self.ontfs.remember(
+            "./service.py", "custom:owner", "team-b", obj_is_literal=True
+        )
+        conflicts = self.ontfs.contradictions(mark=True)
+        owner_conflict = next(c for c in conflicts if c["predicate"].endswith("#owner"))
+        self.assertEqual(set(owner_conflict["objects"]), {"team-a", "team-b"})
+        self.assertEqual(self.ontfs.fact(first)["status"], "disputed")
+        self.assertEqual(self.ontfs.fact(second)["status"], "disputed")
 
 
     def test_batch_relations(self):

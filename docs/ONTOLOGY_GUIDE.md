@@ -150,3 +150,22 @@ ontfs watch . --interval 2
 
 Use `--iterations N` for a bounded run. The watcher rescans the selected path
 when a Python file is added, changed, or removed.
+
+## 9. Fact lifecycle
+
+Facts can expire or require review. Supported statuses are `asserted`,
+`verified`, `stale`, `disputed`, and `retracted`:
+
+```bash
+ontfs link ./service.py custom:owner team-a --literal \
+  --expires-at 2026-12-31T00:00:00+00:00
+ontfs refresh-facts
+ontfs fact <fact-id>
+ontfs fact-status <fact-id> verified
+ontfs contradictions --mark
+```
+
+Contradiction detection groups active facts by subject and predicate and
+reports different object values. Marking a conflict changes the involved facts
+to `disputed`. Retraction keeps the reified fact and its metadata for audit,
+but removes the direct assertion from agent context.

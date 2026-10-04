@@ -122,3 +122,18 @@ ontfs watch . --interval 2
 Use `--iterations N` for a bounded run in automation or tests. The watcher is
 polling-based and currently rescans the selected path when any Python file
 changes.
+
+Facts also have a lifecycle. Add an expiration time when linking, inspect or
+change a status explicitly, refresh expired facts, and find conflicts:
+
+```bash
+ontfs link ./service.py custom:owner team-a --literal \
+  --expires-at 2026-12-31T00:00:00+00:00
+ontfs refresh-facts
+ontfs fact-status <fact-id> verified
+ontfs contradictions --mark
+```
+
+Supported statuses are `asserted`, `verified`, `stale`, `disputed`, and
+`retracted`. Retraction preserves the fact record and its audit metadata but
+removes the assertion from active graph context.

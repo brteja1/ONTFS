@@ -8,6 +8,7 @@ from rdflib.namespace import SKOS, OWL, RDF, RDFS, XSD
 from ontfs.namespaces import bind_namespaces, CUSTOM, ONTFS
 
 DB_FILE = ".ontfs.ttl"
+FACT_STATUSES = {"asserted", "verified", "stale", "retracted", "disputed"}
 
 class OntFSGraph:
     def __init__(self, directory: str = "."):
@@ -80,15 +81,25 @@ class OntFSGraph:
         payload = "\x1f".join((str(s), str(p), str(o))).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:20]
 
+    @staticmethod
+    def fact_uri(fact_id):
+        return URIRef(str(ONTFS) + "fact/" + fact_id)
+
     def record_fact(self, s, p, o, source=None, confidence=None,
-                    asserted_by=None, note=None, observed_at=None):
+                    asserted_by=None, note=None, observed_at=None,
+                    status="asserted", expires_at=None):
         """Record explainability metadata without changing the asserted triple."""
+        if status not in FACT_STATUSES:
+            raise ValueError(f"status must be one of: {', '.join(sorted(FACT_STATUSES))}")
         fact_id = self.fact_identifier(s, p, o)
-        fact = URIRef(str(ONTFS) + "fact/" + fact_id)
+        fact = self.fact_uri(fact_id)
         self.graph.add((fact, RDF.type, RDF.Statement))
         self.graph.add((fact, RDF.subject, s))
         self.graph.add((fact, RDF.predicate, p))
         self.graph.add((fact, RDF.object, o))
+
+        if not list(self.graph.objects(fact, ONTFS.status)):
+            self.graph.add((fact, ONTFS.status, Literal(status)))
 
         if source is not None:
             self.graph.add((fact, ONTFS.source, self.resolve_uri(source)))
@@ -103,6 +114,8 @@ class OntFSGraph:
         if observed_at is None:
             observed_at = datetime.now(timezone.utc).isoformat()
         self.graph.add((fact, ONTFS.observedAt, Literal(observed_at, datatype=XSD.dateTime)))
+        if expires_at is not None:
+            self.graph.add((fact, ONTFS.expiresAt, Literal(expires_at, datatype=XSD.dateTime)))
         self.is_dirty = True
         return fact_id
 
@@ -121,7 +134,7 @@ class OntFSGraph:
         self.is_dirty = True
 
     def fact_metadata(self, s, p, o):
-        fact = URIRef(str(ONTFS) + "fact/" + self.fact_identifier(s, p, o))
+        fact = self.fact_uri(self.fact_identifier(s, p, o))
         values = {}
         for predicate, value in self.graph.predicate_objects(fact):
             if predicate in (RDF.type, RDF.subject, RDF.predicate, RDF.object):
@@ -130,6 +143,90 @@ class OntFSGraph:
             values[key] = str(value)
         values["id"] = str(fact).rsplit("/", 1)[-1]
         return values
+
+    def fact_record(self, fact_id):
+        fact = self.fact_uri(fact_id)
+        subject = next(self.graph.objects(fact, RDF.subject), None)
+        predicate = next(self.graph.objects(fact, RDF.predicate), None)
+        obj = next(self.graph.objects(fact, RDF.object), None)
+        if subject is None or predicate is None or obj is None:
+            raise ValueError(f"fact not found: {fact_id}")
+        metadata = self.fact_metadata(subject, predicate, obj)
+        metadata.update({
+            "subject": str(subject),
+            "predicate": str(predicate),
+            "object": str(obj),
+        })
+        return metadata
+
+    def set_fact_status(self, fact_id, status, reason=None):
+        if status not in FACT_STATUSES:
+            raise ValueError(f"status must be one of: {', '.join(sorted(FACT_STATUSES))}")
+        fact = self.fact_uri(fact_id)
+        subject = next(self.graph.objects(fact, RDF.subject), None)
+        predicate = next(self.graph.objects(fact, RDF.predicate), None)
+        obj = next(self.graph.objects(fact, RDF.object), None)
+        if subject is None or predicate is None or obj is None:
+            raise ValueError(f"fact not found: {fact_id}")
+        self.graph.remove((fact, ONTFS.status, None))
+        self.graph.add((fact, ONTFS.status, Literal(status)))
+        self.graph.remove((fact, ONTFS.statusChangedAt, None))
+        self.graph.add((fact, ONTFS.statusChangedAt, Literal(
+            datetime.now(timezone.utc).isoformat(), datatype=XSD.dateTime
+        )))
+        if reason is not None:
+            self.graph.remove((fact, ONTFS.statusReason, None))
+            self.graph.add((fact, ONTFS.statusReason, Literal(reason)))
+        if status == "retracted":
+            self.graph.remove((subject, predicate, obj))
+        self.is_dirty = True
+        return self.fact_record(fact_id)
+
+    @staticmethod
+    def _parse_datetime(value):
+        text = str(value).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    def refresh_stale(self, now=None):
+        now = now or datetime.now(timezone.utc)
+        stale = []
+        for fact in set(self.graph.subjects(RDF.type, RDF.Statement)):
+            expires = next(self.graph.objects(fact, ONTFS.expiresAt), None)
+            status = str(next(self.graph.objects(fact, ONTFS.status), "asserted"))
+            if expires is None or status not in {"asserted", "verified"}:
+                continue
+            try:
+                expired = self._parse_datetime(expires) <= now
+            except ValueError:
+                continue
+            if expired:
+                fact_id = str(fact).rsplit("/", 1)[-1]
+                self.set_fact_status(fact_id, "stale", "expiration time reached")
+                stale.append(fact_id)
+        return stale
+
+    def contradictions(self):
+        grouped = {}
+        for fact in set(self.graph.subjects(RDF.type, RDF.Statement)):
+            subject = next(self.graph.objects(fact, RDF.subject), None)
+            predicate = next(self.graph.objects(fact, RDF.predicate), None)
+            obj = next(self.graph.objects(fact, RDF.object), None)
+            status = str(next(self.graph.objects(fact, ONTFS.status), "asserted"))
+            if None in (subject, predicate, obj) or status == "retracted":
+                continue
+            grouped.setdefault((subject, predicate), []).append((obj, fact, status))
+        conflicts = []
+        for (subject, predicate), entries in grouped.items():
+            objects = {str(entry[0]) for entry in entries}
+            if len(objects) > 1:
+                conflicts.append({
+                    "subject": str(subject),
+                    "predicate": str(predicate),
+                    "objects": sorted(objects),
+                    "facts": [self.fact_record(str(entry[1]).rsplit("/", 1)[-1]) for entry in entries],
+                })
+        return conflicts
 
     def context(self, entity: str, depth: int = 1, limit: int = 50):
         """Return bounded, explainable graph context around an entity."""

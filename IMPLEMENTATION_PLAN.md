@@ -35,9 +35,15 @@ layer, while continuing to use RDF and `rdflib` as the storage/query foundation.
 3. Support bounded polling cycles for tests and automation, or continuous mode
    for development workflows.
 
+## Milestone 5 (this change)
+
+1. Add asserted, verified, stale, disputed, and retracted fact states.
+2. Mark facts stale when their expiration time is reached.
+3. Preserve retracted fact history while removing it from active context.
+4. Detect and optionally mark conflicting object values as disputed.
+
 ## Follow-up milestones
 
-- Fact lifecycle: verified, stale, retracted, and contradiction views.
 - Hybrid graph, text, and vector retrieval.
 - MCP and higher-level Python APIs for agent runtimes.
 
