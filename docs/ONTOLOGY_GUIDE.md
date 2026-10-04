@@ -189,3 +189,17 @@ ontfs search "durable data storage" --vector --embedding-dimensions 256
 Vector mode uses deterministic hashed embeddings and combines cosine, lexical,
 and graph scores. It is a portable baseline rather than a neural semantic
 model; pluggable neural backends and persistent indexes are future extensions.
+
+## 11. MCP integration
+
+MCP support is optional:
+
+```bash
+pip install -e '.[mcp]'
+ontfs-mcp --directory .
+```
+
+The MCP server exposes `context`, `search`, `scan`, proposal workflow, fact
+lifecycle, and contradiction tools. Each server instance is scoped to the
+directory passed through `--directory`; the core ONTFS package remains usable
+without installing MCP.

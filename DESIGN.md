@@ -52,6 +52,14 @@ while their direct assertion is removed from active context. This gives agents
 an explicit trust and review model instead of treating every triple as equally
 current.
 
+### 3.4 MCP boundary
+
+`ontfs.mcp_server` provides an optional FastMCP adapter over the higher-level
+ONTFS APIs. It exposes retrieval, scanning, proposal, and lifecycle tools while
+scoping one server instance to one graph directory. MCP is an optional package
+extra, so RDF and CLI users do not acquire a runtime dependency on the agent
+protocol.
+
 ### 4. CLI Interface Design
 The CLI is designed to be intuitive, borrowing ergonomic concepts from HTFS but applying them to a general graph model.
 

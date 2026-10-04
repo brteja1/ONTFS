@@ -54,10 +54,16 @@ layer, while continuing to use RDF and `rdflib` as the storage/query foundation.
 2. Combine cosine similarity with lexical and graph relevance scores.
 3. Expose vector ranking controls through the Python API and CLI.
 
+## Milestone 8 (this change)
+
+1. Expose context, search, scanning, proposals, and lifecycle operations as
+   optional MCP tools.
+2. Scope each MCP server instance to one ONTFS directory.
+3. Keep MCP optional so the core CLI and Python package do not require it.
+
 ## Follow-up milestones
 
 - Pluggable neural embedding backends and persistent vector indexes.
-- MCP and higher-level Python APIs for agent runtimes.
 
 ## Success criteria
 

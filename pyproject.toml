@@ -12,5 +12,11 @@ dependencies = [
     "rdflib>=7.0.0",
 ]
 
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.0.0",
+]
+
 [project.scripts]
 ontfs = "ontfs.cli:main"
+ontfs-mcp = "ontfs.mcp_server:main"

@@ -7,6 +7,11 @@ from unittest.mock import patch
 from pathlib import Path
 from ontfs.core import OntFS
 
+try:
+    from ontfs.mcp_server import create_server
+except ImportError:
+    create_server = None
+
 class TestOntFSCore(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory for each test
@@ -227,6 +232,19 @@ class TestOntFSCore(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self.ontfs.search("database", vector=True, embedding_dimensions=0)
+
+    @unittest.skipIf(create_server is None, "optional MCP dependency is unavailable")
+    def test_mcp_server_exposes_agent_tools(self):
+        server = create_server(self.test_dir.name)
+        tools = set(server._tool_manager._tools)
+        self.assertEqual(tools, {
+            "context", "search", "scan", "propose_link",
+            "validate_proposal", "commit_proposal", "set_fact_status",
+            "contradictions",
+        })
+        self.assertEqual(server._tool_manager._tools["context"].fn(
+            "./missing.py", depth=1, limit=5
+        )["facts"], [])
 
 
     def test_batch_relations(self):

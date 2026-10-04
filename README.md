@@ -156,3 +156,17 @@ ontfs search "durable data storage" --vector --embedding-dimensions 256
 This uses deterministic hashed text embeddings and combines cosine similarity
 with lexical and graph scores. It is a portable baseline; pluggable neural
 backends and persistent vector indexes remain future work.
+
+## MCP integration
+
+Install the optional MCP dependency and expose one ONTFS directory to an agent:
+
+```bash
+pip install -e '.[mcp]'
+ontfs-mcp --directory .
+```
+
+The server exposes tools for context retrieval, hybrid/vector search, scanning,
+proposal validation and commit, fact status changes, and contradiction checks.
+The server is directory-scoped; mutations should use proposals and explicit
+commit tools.
