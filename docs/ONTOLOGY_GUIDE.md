@@ -140,4 +140,13 @@ ontfs scan .
 Currently it indexes Python files, top-level imports, and Git commit/branch
 metadata. Scan results use ordinary RDF relationships, so they are available
 through both `context` and SPARQL. Use `--no-git` when Git provenance is not
-needed. File watching and incremental rescanning are not yet implemented.
+needed.
+
+To keep a development graph current, use the dependency-free polling watcher:
+
+```bash
+ontfs watch . --interval 2
+```
+
+Use `--iterations N` for a bounded run. The watcher rescans the selected path
+when a Python file is added, changed, or removed.

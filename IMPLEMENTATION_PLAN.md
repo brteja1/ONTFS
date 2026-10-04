@@ -28,9 +28,15 @@ layer, while continuing to use RDF and `rdflib` as the storage/query foundation.
 2. Record Git commit and branch provenance when available.
 3. Expose scan results through the CLI and agent context API.
 
+## Milestone 4 (this change)
+
+1. Poll Python files for changes without adding a runtime dependency.
+2. Reuse the scanner when a change is detected.
+3. Support bounded polling cycles for tests and automation, or continuous mode
+   for development workflows.
+
 ## Follow-up milestones
 
-- File watching and incremental rescanning.
 - Fact lifecycle: verified, stale, retracted, and contradiction views.
 - Hybrid graph, text, and vector retrieval.
 - MCP and higher-level Python APIs for agent runtimes.

@@ -68,6 +68,14 @@ def main():
     scan_parser.add_argument("path", nargs="?", default=".", help="Directory or Python file to scan")
     scan_parser.add_argument("--no-git", action="store_true", help="Do not record Git commit and branch")
 
+    watch_parser = subparsers.add_parser(
+        "watch", help="Poll Python files and rescan when they change"
+    )
+    watch_parser.add_argument("path", nargs="?", default=".")
+    watch_parser.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
+    watch_parser.add_argument("--iterations", type=int, help="Polling cycles; omit to watch continuously")
+    watch_parser.add_argument("--no-git", action="store_true", help="Do not record Git commit and branch")
+
     propose_parser = subparsers.add_parser(
         "propose-link", help="Create a pending link proposal without changing the graph"
     )
@@ -137,6 +145,15 @@ def main():
     elif args.command == "scan":
         try:
             print(json.dumps(ontfs.scan(args.path, include_git=not args.no_git), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "watch":
+        try:
+            results = ontfs.watch(
+                args.path, interval=args.interval, iterations=args.iterations,
+                include_git=not args.no_git,
+            )
+            print(json.dumps({"scans": results, "watching": args.iterations is None}, indent=2))
         except ValueError as e:
             parser.error(str(e))
     elif args.command == "propose-link":

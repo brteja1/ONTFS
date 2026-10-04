@@ -146,6 +146,23 @@ class TestOntFSCore(unittest.TestCase):
         self.assertIn("http://ontfs.example.org/custom#imports", predicates)
         self.assertIn("http://ontfs.example.org/custom#gitCommit", predicates)
 
+    def test_watch_rescans_when_snapshot_changes(self):
+        Path(self.test_dir.name, "main.py").write_text("import os\n", encoding="utf-8")
+        with patch(
+            "ontfs.watcher.snapshot",
+            side_effect=[{"before": (1, 1)}, {"after": (2, 2)}],
+        ), patch(
+            "ontfs.watcher.scan",
+            side_effect=[{"scanned": 1}, {"scanned": 2}],
+        ) as scanner:
+            results = self.ontfs.watch(interval=0, iterations=1)
+        self.assertEqual(results, [{"scanned": 1}, {"scanned": 2}])
+        self.assertEqual(scanner.call_count, 2)
+
+    def test_watch_rejects_invalid_interval(self):
+        with self.assertRaises(ValueError):
+            self.ontfs.watch(interval=-1, iterations=0)
+
 
     def test_batch_relations(self):
         import json

@@ -111,3 +111,14 @@ ontfs scan .
 The scanner records source files, imported top-level modules, and the current
 Git commit and branch when the path is inside a Git repository. Use
 `ontfs scan . --no-git` to omit Git metadata.
+
+For a development checkout, ONTFS can poll for Python file changes and rescan
+automatically:
+
+```bash
+ontfs watch . --interval 2
+```
+
+Use `--iterations N` for a bounded run in automation or tests. The watcher is
+polling-based and currently rescans the selected path when any Python file
+changes.

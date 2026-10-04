@@ -94,6 +94,13 @@ class OntFS:
         from ontfs.scanner import scan
         return scan(self, path=path, include_git=include_git)
 
+    def watch(self, path=".", interval=1.0, iterations=None, include_git=True):
+        from ontfs.watcher import watch
+        return watch(
+            self, path=path, interval=interval,
+            iterations=iterations, include_git=include_git,
+        )
+
     @property
     def proposals_path(self):
         return self.directory / self.PROPOSALS_FILE
