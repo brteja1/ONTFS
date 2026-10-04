@@ -2,6 +2,7 @@
 
 import re
 from pathlib import Path
+from ontfs.embeddings import cosine, embed
 
 
 TEXT_EXTENSIONS = {
@@ -28,7 +29,8 @@ def _files(root):
     )
 
 
-def search(ontfs, query, path=".", limit=20, related_to=None, depth=1):
+def search(ontfs, query, path=".", limit=20, related_to=None, depth=1,
+           vector=False, embedding_dimensions=256):
     """Search local text and boost files connected to a graph entity."""
     if not query.strip():
         raise ValueError("query must not be empty")
@@ -41,6 +43,7 @@ def search(ontfs, query, path=".", limit=20, related_to=None, depth=1):
     if not root.exists():
         raise ValueError(f"search path does not exist: {path}")
     query_tokens = _tokens(query)
+    query_vector = embed(query, embedding_dimensions) if vector else None
     related_uris = set()
     if related_to is not None:
         context = ontfs.context(related_to, depth=depth, limit=500)
@@ -59,12 +62,15 @@ def search(ontfs, query, path=".", limit=20, related_to=None, depth=1):
         tokens = _tokens(text)
         counts = {token: tokens.count(token) for token in query_tokens}
         hits = sum(counts.values())
-        if not hits:
+        vector_score = 0.0
+        if vector:
+            vector_score = cosine(query_vector, embed(text, embedding_dimensions))
+        if not hits and not vector:
             continue
         uri = file.resolve().as_uri()
         graph_boost = 5 if uri in related_uris else 0
         name_boost = sum(2 for token in query_tokens if token in file.name.casefold())
-        score = hits + graph_boost + name_boost
+        score = hits + graph_boost + name_boost + (vector_score * 10.0)
         lines = text.splitlines()
         snippet = next((line.strip() for line in lines if any(
             token in line.casefold() for token in query_tokens
@@ -75,8 +81,15 @@ def search(ontfs, query, path=".", limit=20, related_to=None, depth=1):
             "score": score,
             "text_hits": hits,
             "graph_boost": graph_boost,
+            "vector_score": round(vector_score, 6),
             "snippet": snippet[:240],
         })
 
     results.sort(key=lambda item: (-item["score"], item["path"]))
-    return {"query": query, "related_to": related_to, "results": results[:limit]}
+    return {
+        "query": query,
+        "related_to": related_to,
+        "vector": vector,
+        "embedding_dimensions": embedding_dimensions if vector else None,
+        "results": results[:limit],
+    }

@@ -48,9 +48,15 @@ layer, while continuing to use RDF and `rdflib` as the storage/query foundation.
 2. Boost results connected to a requested graph neighborhood.
 3. Return compact JSON suitable for agent context selection.
 
+## Milestone 7 (this change)
+
+1. Add deterministic local vector embeddings without a mandatory ML dependency.
+2. Combine cosine similarity with lexical and graph relevance scores.
+3. Expose vector ranking controls through the Python API and CLI.
+
 ## Follow-up milestones
 
-- Vector retrieval and embedding-backed ranking.
+- Pluggable neural embedding backends and persistent vector indexes.
 - MCP and higher-level Python APIs for agent runtimes.
 
 ## Success criteria

@@ -81,6 +81,8 @@ def main():
     search_parser.add_argument("--limit", type=int, default=20)
     search_parser.add_argument("--related-to", help="Entity whose graph neighborhood should be boosted")
     search_parser.add_argument("--depth", type=int, default=1)
+    search_parser.add_argument("--vector", action="store_true", help="Enable vector similarity ranking")
+    search_parser.add_argument("--embedding-dimensions", type=int, default=256)
 
     scan_parser = subparsers.add_parser(
         "scan", help="Index Python files, imports, and Git context for agents"
@@ -181,7 +183,8 @@ def main():
         try:
             print(json.dumps(ontfs.search(
                 args.query, path=args.path, limit=args.limit,
-                related_to=args.related_to, depth=args.depth,
+                related_to=args.related_to, depth=args.depth, vector=args.vector,
+                embedding_dimensions=args.embedding_dimensions,
             ), indent=2))
         except ValueError as e:
             parser.error(str(e))

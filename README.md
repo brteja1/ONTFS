@@ -147,4 +147,12 @@ ontfs search "database migration" \
 
 It searches supported local text files, returns snippets, and boosts files
 connected to the requested entity through the knowledge graph. Embedding-based
-vector ranking is still a future extension.
+vector ranking is also available without an external model dependency:
+
+```bash
+ontfs search "durable data storage" --vector --embedding-dimensions 256
+```
+
+This uses deterministic hashed text embeddings and combines cosine similarity
+with lexical and graph scores. It is a portable baseline; pluggable neural
+backends and persistent vector indexes remain future work.

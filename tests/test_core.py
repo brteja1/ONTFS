@@ -210,6 +210,24 @@ class TestOntFSCore(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ontfs.search("anything", limit=0)
 
+    def test_vector_search_returns_embedding_scores(self):
+        Path(self.test_dir.name, "storage.md").write_text(
+            "Database storage uses durable records.\n", encoding="utf-8"
+        )
+        Path(self.test_dir.name, "unrelated.md").write_text(
+            "Authentication tokens expire quickly.\n", encoding="utf-8"
+        )
+        result = self.ontfs.search(
+            "database storage", vector=True, embedding_dimensions=64
+        )
+        self.assertTrue(result["vector"])
+        self.assertEqual(result["embedding_dimensions"], 64)
+        self.assertEqual(result["results"][0]["path"], str(Path(self.test_dir.name, "storage.md")))
+        self.assertGreater(result["results"][0]["vector_score"], 0)
+
+        with self.assertRaises(ValueError):
+            self.ontfs.search("database", vector=True, embedding_dimensions=0)
+
 
     def test_batch_relations(self):
         import json

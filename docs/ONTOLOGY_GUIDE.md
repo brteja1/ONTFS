@@ -179,5 +179,13 @@ ontfs search "database migration" --related-to ./service.py --limit 10
 ```
 
 Results include a score, text-hit count, graph boost, and a short snippet. The
-current implementation uses bounded local lexical search; vector embeddings
-and semantic ranking are not yet included.
+current implementation uses bounded local lexical search. Vector ranking can
+also be enabled without an external model:
+
+```bash
+ontfs search "durable data storage" --vector --embedding-dimensions 256
+```
+
+Vector mode uses deterministic hashed embeddings and combines cosine, lexical,
+and graph scores. It is a portable baseline rather than a neural semantic
+model; pluggable neural backends and persistent indexes are future extensions.
