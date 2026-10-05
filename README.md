@@ -41,6 +41,9 @@ For detailed guides on how to use the CLI and model data, please see the interna
 # Install the CLI
 pip install -e .
 
+# Install ONTFS with every optional integration and validation dependency
+make deps
+
 # Initialize the graph in the current directory
 ontfs init
 
