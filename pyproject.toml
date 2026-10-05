@@ -16,6 +16,12 @@ dependencies = [
 mcp = [
     "mcp>=1.0.0",
 ]
+shacl = [
+    "pyshacl>=0.25",
+]
+embed = [
+    "sentence-transformers>=3.0",
+]
 
 [project.scripts]
 ontfs = "ontfs.cli:main"

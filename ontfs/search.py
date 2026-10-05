@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from ontfs.embeddings import cosine, embed
+from ontfs.embeddings import cached_embedding, cosine, create_backend
 
 
 TEXT_EXTENSIONS = {
@@ -30,7 +30,8 @@ def _files(root):
 
 
 def search(ontfs, query, path=".", limit=20, related_to=None, depth=1,
-           vector=False, embedding_dimensions=256):
+           vector=False, embedding_dimensions=256, embedding_backend="hashed",
+           embedding_model=None):
     """Search local text and boost files connected to a graph entity."""
     if not query.strip():
         raise ValueError("query must not be empty")
@@ -43,13 +44,15 @@ def search(ontfs, query, path=".", limit=20, related_to=None, depth=1,
     if not root.exists():
         raise ValueError(f"search path does not exist: {path}")
     query_tokens = _tokens(query)
-    query_vector = embed(query, embedding_dimensions) if vector else None
+    backend = create_backend(embedding_backend, embedding_dimensions, embedding_model) if vector else None
+    query_vector = backend.embed([query])[0] if vector else None
     related_uris = set()
     if related_to is not None:
         context = ontfs.context(related_to, depth=depth, limit=500)
-        related_uris.add(context["entity"])
+        related_uris.add(str(ontfs.graph.resolve_uri(context["entity"])))
         for fact in context["facts"]:
-            related_uris.update((fact["subject"], fact["object"]))
+            for term in (fact["subject"], fact["object"]):
+                related_uris.add(str(ontfs.graph.resolve_uri(term)))
 
     results = []
     for file in _files(root):
@@ -64,10 +67,10 @@ def search(ontfs, query, path=".", limit=20, related_to=None, depth=1,
         hits = sum(counts.values())
         vector_score = 0.0
         if vector:
-            vector_score = cosine(query_vector, embed(text, embedding_dimensions))
+            vector_score = cosine(query_vector, cached_embedding(ontfs, backend, text, file))
         if not hits and not vector:
             continue
-        uri = file.resolve().as_uri()
+        uri = str(ontfs.graph.resolve_uri(str(file)))
         graph_boost = 5 if uri in related_uris else 0
         name_boost = sum(2 for token in query_tokens if token in file.name.casefold())
         score = hits + graph_boost + name_boost + (vector_score * 10.0)
@@ -90,6 +93,8 @@ def search(ontfs, query, path=".", limit=20, related_to=None, depth=1,
         "query": query,
         "related_to": related_to,
         "vector": vector,
-        "embedding_dimensions": embedding_dimensions if vector else None,
+        "embedding_backend": backend.name if backend else None,
+        "embedding_model": backend.model if backend else None,
+        "embedding_dimensions": backend.dimensions if backend else None,
         "results": results[:limit],
     }

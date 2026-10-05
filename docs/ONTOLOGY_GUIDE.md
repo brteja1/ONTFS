@@ -170,6 +170,18 @@ reports different object values. Marking a conflict changes the involved facts
 to `disputed`. Retraction keeps the reified fact and its metadata for audit,
 but removes the direct assertion from agent context.
 
+Only predicates declared with `owl:FunctionalProperty` are considered for
+contradictions. Declare a single-valued relation with:
+
+```bash
+ontfs add-relation custom:owner --functional
+```
+
+Older graphs can be converted to relocatable local file identifiers with
+`ontfs migrate-uris --dry-run` followed by `ontfs migrate-uris`. Back up the
+Turtle graph first; fact IDs that include local file terms are remapped, and
+proposal references are updated.
+
 ## 10. Hybrid search
 
 Use `search` when an agent needs both textual relevance and graph context:
@@ -187,8 +199,12 @@ ontfs search "durable data storage" --vector --embedding-dimensions 256
 ```
 
 Vector mode uses deterministic hashed embeddings and combines cosine, lexical,
-and graph scores. It is a portable baseline rather than a neural semantic
-model; pluggable neural backends and persistent indexes are future extensions.
+and graph scores. The persistent cache lives in `.ontfs.vectors/`; the watcher
+evicts vectors for changed or removed files. `--hashed` is the descriptive
+option name, while `--vector` remains a compatibility alias. Install
+`.[embed]` to select a local Sentence Transformers model with
+`--embedding-backend sentence-transformers` and optionally
+`--embedding-model <name>`.
 
 ## 11. MCP integration
 
@@ -199,10 +215,64 @@ pip install -e '.[mcp]'
 ontfs-mcp --directory .
 ```
 
-The MCP server exposes `context`, `search`, `scan`, proposal workflow, fact
-lifecycle, and contradiction tools. Each server instance is scoped to the
+The MCP server exposes `context`, `search`, `recall`, `select`, `scan`, graph
+validation, proposal workflow, lifecycle, and contradiction tools. Each server instance is scoped to the
 directory passed through `--directory`; the core ONTFS package remains usable
 without installing MCP.
 
 See the dedicated [MCP Guide](MCP_GUIDE.md) for the complete tool contract,
 transport options, and safe mutation workflow.
+
+## 12. Entity lifecycle
+
+Entity lifecycle is separate from fact lifecycle. An entity can be marked
+`active`, `verified`, `experimental`, `stale`, `superseded`, or `deprecated`:
+
+```bash
+ontfs entity-status ./new-design.md verified --reason "Reviewed"
+ontfs supersede ./new-design.md ./old-design.md --note "Replaces the old design"
+ontfs context ./new-design.md
+ontfs context ./new-design.md --include-superseded
+```
+
+Context reports the root entity status and hides superseded neighbors by
+default. Set `--include-superseded` to include their ordinary neighboring facts;
+the lifecycle bookkeeping predicates themselves remain omitted from context.
+
+## 13. Boolean tag selection
+
+Select resources using `&`, `|`, `!`, and parentheses. Precedence is `!`, then
+`&`, then `|`:
+
+```bash
+ontfs select '(Research | Project) & !Archived' --limit 50
+```
+
+Tags can be resolved by prefixed URI, `skos:prefLabel`, `skos:altLabel`, or
+`skos:hiddenLabel`. Hierarchical child tags match their broader parent.
+
+## 14. Budgeted pointer recall
+
+`recall` resolves query terms against preferred, alternate, hidden, and RDFS
+labels, then returns linked resources as pointers. It filters retracted facts
+and superseded entities by default and never includes file bodies. Summaries
+are read only from the configured summary predicate (default
+`dcterms:abstract`):
+
+```bash
+ontfs recall "data store" --limit 6 --max-tokens 1200
+ontfs recall "data store" --no-text-search
+```
+
+The response includes `why` explanations and approximate token/cap statistics.
+Local text search may contribute ranked pointers, but snippets are not copied
+into recall output.
+
+## 15. Context traversal benchmark
+
+Run `python tests/bench_context.py` to compare indexed adjacency lookup with a
+full graph scan on a synthetic 100,000-triple graph. On the current developer
+environment, the root neighborhood took about 0.00008s indexed versus 0.19s
+for a full scan (roughly 2,400x for this microbenchmark). This isolates
+traversal; it does not measure Turtle parsing, so it does not justify adopting
+an additional persistent store backend by itself.

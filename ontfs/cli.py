@@ -16,6 +16,7 @@ def main():
     addrel_parser.add_argument("--type", choices=["object", "datatype"], help="Type of property")
     addrel_parser.add_argument("--transitive", action="store_true", help="Mark as owl:TransitiveProperty")
     addrel_parser.add_argument("--symmetric", action="store_true", help="Mark as owl:SymmetricProperty")
+    addrel_parser.add_argument("--functional", action="store_true", help="Mark as owl:FunctionalProperty")
     addrel_parser.add_argument("--subprop-of", help="URI this relation is a sub-property of (rdfs:subPropertyOf)")
     addrel_parser.add_argument("--inverse", help="URI that is the inverse of this relation (owl:inverseOf)")
 
@@ -63,6 +64,11 @@ def main():
     status_parser.add_argument("status", choices=["asserted", "verified", "stale", "retracted", "disputed"])
     status_parser.add_argument("--reason")
     refresh_parser = subparsers.add_parser("refresh-facts", help="Mark expired facts as stale")
+    migrate_parser = subparsers.add_parser("migrate-uris", help="Convert local file URIs to relocatable graph IDs")
+    migrate_parser.add_argument("--dry-run", action="store_true", help="Report changes without saving")
+    validate_parser = subparsers.add_parser("validate", help="Validate the graph against SHACL shapes")
+    validate_parser.add_argument("--shapes", help="Shapes Turtle file (default: .ontfs.shapes.ttl)")
+    evidence_parser = subparsers.add_parser("migrate-evidence", help="Move legacy fact metadata to evidence records")
     contradictions_parser = subparsers.add_parser("contradictions", help="Find conflicting facts")
     contradictions_parser.add_argument("--mark", action="store_true", help="Mark conflicting facts as disputed")
 
@@ -72,6 +78,17 @@ def main():
     context_parser.add_argument("entity", help="Entity URI or local file path")
     context_parser.add_argument("--depth", type=int, default=1, help="Graph traversal depth (default: 1)")
     context_parser.add_argument("--limit", type=int, default=50, help="Maximum facts to return (default: 50)")
+    context_parser.add_argument("--include-superseded", action="store_true")
+
+    entity_status_parser = subparsers.add_parser("entity-status", help="Set an entity lifecycle status")
+    entity_status_parser.add_argument("entity")
+    entity_status_parser.add_argument("status", choices=["active", "verified", "experimental", "stale", "superseded", "deprecated"])
+    entity_status_parser.add_argument("--reason")
+    supersede_parser = subparsers.add_parser("supersede", help="Mark one entity as superseded by another")
+    supersede_parser.add_argument("new_entity")
+    supersede_parser.add_argument("old_entity")
+    supersede_parser.add_argument("--source")
+    supersede_parser.add_argument("--note")
 
     search_parser = subparsers.add_parser(
         "search", help="Search text and boost graph-related files"
@@ -81,8 +98,23 @@ def main():
     search_parser.add_argument("--limit", type=int, default=20)
     search_parser.add_argument("--related-to", help="Entity whose graph neighborhood should be boosted")
     search_parser.add_argument("--depth", type=int, default=1)
-    search_parser.add_argument("--vector", action="store_true", help="Enable vector similarity ranking")
+    search_parser.add_argument("--vector", "--hashed", dest="vector", action="store_true", help="Enable hashed-vector ranking (--vector is a compatibility alias)")
+    search_parser.add_argument("--embedding-backend", choices=["hashed", "sentence-transformers"], default="hashed")
+    search_parser.add_argument("--embedding-model", help="Sentence Transformers model name")
     search_parser.add_argument("--embedding-dimensions", type=int, default=256)
+
+    select_parser = subparsers.add_parser("select", help="Select tagged resources with a boolean expression")
+    select_parser.add_argument("expression")
+    select_parser.add_argument("--predicate", default="ontfs:hasTag")
+    select_parser.add_argument("--limit", type=int, default=100)
+
+    recall_parser = subparsers.add_parser("recall", help="Return budgeted graph pointers for an agent")
+    recall_parser.add_argument("query")
+    recall_parser.add_argument("--limit", type=int, default=6)
+    recall_parser.add_argument("--max-tokens", type=int, default=1200)
+    recall_parser.add_argument("--summary-predicate", default="dcterms:abstract")
+    recall_parser.add_argument("--no-text-search", action="store_true")
+    recall_parser.add_argument("--vector", action="store_true")
 
     scan_parser = subparsers.add_parser(
         "scan", help="Index Python files, imports, and Git context for agents"
@@ -137,7 +169,8 @@ def main():
             is_transitive=args.transitive, 
             is_symmetric=args.symmetric, 
             subprop_of=args.subprop_of, 
-            inverse_of=args.inverse
+            inverse_of=args.inverse,
+            functional=args.functional
         )
     elif args.command == "add-relations":
         ontfs.add_relations(args.file)
@@ -172,11 +205,43 @@ def main():
             parser.error(str(e))
     elif args.command == "refresh-facts":
         print(json.dumps({"stale": ontfs.refresh_stale()}, indent=2))
+    elif args.command == "migrate-uris":
+        try:
+            print(json.dumps(ontfs.migrate_uris(dry_run=args.dry_run), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "validate":
+        try:
+            result = ontfs.validate(args.shapes)
+            print(json.dumps(result, indent=2))
+            if not result["conforms"]:
+                sys.exit(2)
+        except RuntimeError as e:
+            parser.error(str(e))
+    elif args.command == "migrate-evidence":
+        print(json.dumps({"facts_migrated": ontfs.migrate_evidence()}, indent=2))
     elif args.command == "contradictions":
         print(json.dumps(ontfs.contradictions(mark=args.mark), indent=2))
+    elif args.command == "entity-status":
+        try:
+            print(json.dumps({"entity": args.entity, "status": ontfs.set_entity_status(
+                args.entity, args.status, args.reason
+            )}, indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "supersede":
+        try:
+            print(json.dumps({"fact_id": ontfs.supersede(
+                args.new_entity, args.old_entity, source=args.source, note=args.note
+            )}, indent=2))
+        except ValueError as e:
+            parser.error(str(e))
     elif args.command == "context":
         try:
-            print(ontfs.context_json(args.entity, depth=args.depth, limit=args.limit))
+            print(json.dumps(ontfs.context(
+                args.entity, depth=args.depth, limit=args.limit,
+                include_superseded=args.include_superseded,
+            ), indent=2))
         except ValueError as e:
             parser.error(str(e))
     elif args.command == "search":
@@ -185,8 +250,26 @@ def main():
                 args.query, path=args.path, limit=args.limit,
                 related_to=args.related_to, depth=args.depth, vector=args.vector,
                 embedding_dimensions=args.embedding_dimensions,
+                embedding_backend=args.embedding_backend,
+                embedding_model=args.embedding_model,
             ), indent=2))
         except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "select":
+        try:
+            print(json.dumps(ontfs.select(
+                args.expression, predicate=args.predicate, limit=args.limit
+            ), indent=2))
+        except ValueError as e:
+            parser.error(str(e))
+    elif args.command == "recall":
+        try:
+            print(json.dumps(ontfs.recall(
+                args.query, limit=args.limit, max_tokens=args.max_tokens,
+                summary_predicate=args.summary_predicate,
+                search_text=not args.no_text_search, vector=args.vector,
+            ), indent=2))
+        except (ValueError, RuntimeError) as e:
             parser.error(str(e))
     elif args.command == "scan":
         try:

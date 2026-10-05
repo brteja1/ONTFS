@@ -26,8 +26,12 @@ def create_server(directory: str = "."):
     )
 
     @server.tool(description="Return bounded, explainable graph context around an entity.")
-    def context(entity: str, depth: int = 1, limit: int = 50) -> dict:
-        return ontfs.context(entity, depth=depth, limit=limit)
+    def context(entity: str, depth: int = 1, limit: int = 50,
+                include_superseded: bool = False) -> dict:
+        return ontfs.context(
+            entity, depth=depth, limit=limit,
+            include_superseded=include_superseded,
+        )
 
     @server.tool(description="Search local text with optional graph and vector ranking.")
     def search(query: str, path: str = ".", limit: int = 20,
@@ -41,6 +45,16 @@ def create_server(directory: str = "."):
     @server.tool(description="Scan Python files, imports, and Git provenance.")
     def scan(path: str = ".", include_git: bool = True) -> dict:
         return ontfs.scan(path, include_git=include_git)
+
+    @server.tool(description="Select resources using Boolean expressions over hierarchical tags.")
+    def select(expression: str, predicate: str = "ontfs:hasTag", limit: int = 100) -> dict:
+        return ontfs.select(expression, predicate=predicate, limit=limit)
+
+    @server.tool(description="Return budgeted graph pointers and summaries without file contents.")
+    def recall(query: str, limit: int = 6, max_tokens: int = 1200,
+               search_text: bool = True, vector: bool = False) -> dict:
+        return ontfs.recall(query, limit=limit, max_tokens=max_tokens,
+                            search_text=search_text, vector=vector)
 
     @server.tool(description="Create a pending link proposal without changing the graph.")
     def propose_link(subject: str, predicate: str, object: str,
@@ -69,9 +83,24 @@ def create_server(directory: str = "."):
                         reason: Optional[str] = None) -> dict:
         return ontfs.set_fact_status(fact_id, status, reason=reason)
 
+    @server.tool(description="Set an entity lifecycle status.")
+    def set_entity_status(entity: str, status: str,
+                          reason: Optional[str] = None) -> dict:
+        return {"entity": entity, "status": ontfs.set_entity_status(entity, status, reason)}
+
+    @server.tool(description="Record that one entity supersedes another.")
+    def supersede(new_entity: str, old_entity: str,
+                  source: Optional[str] = None,
+                  note: Optional[str] = None) -> dict:
+        return {"fact_id": ontfs.supersede(new_entity, old_entity, source, note)}
+
     @server.tool(description="Find conflicting object values for subject/predicate pairs.")
     def contradictions(mark: bool = False) -> list:
         return ontfs.contradictions(mark=mark)
+
+    @server.tool(description="Validate the active graph against configured SHACL shapes.")
+    def validate(shapes_path: Optional[str] = None) -> dict:
+        return ontfs.validate(shapes_path)
 
     return server
 

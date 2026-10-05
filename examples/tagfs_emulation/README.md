@@ -18,7 +18,7 @@ Inside the wrapper, `tagfs` concepts are dynamically translated into `ontfs` tri
 |------------------|---------------------------------|
 | A Tag | A custom URI: `custom:tag:Project` |
 | Tag Hierarchy (`Project/Alpha`) | `<custom:tag:Alpha> <skos:broader> <custom:tag:Project>` |
-| Tagging a File | `<file:///path.pdf> <ontfs:hasTag> <custom:tag:Alpha>` |
+| Tagging a File | `<ontfs:file/path.pdf> <ontfs:hasTag> <custom:tag:Alpha>` |
 
 ### Usage Examples
 
@@ -47,3 +47,6 @@ You can run the wrapper exactly like the original `tagfs`:
 ./tagfs_wrapper.py lsresources Project
 ```
 *(This translates into a SPARQL query that finds files tagged with `Project` **OR** any tag that has a `skos:broader*` path leading back to `Project`, natively executing a transitive closure search).*
+
+Boolean tag expressions are available through the ONTFS CLI, for example
+`ontfs select 'Project & Development'`.

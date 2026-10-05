@@ -1,5 +1,5 @@
 from rdflib import Namespace
-from rdflib.namespace import SKOS, OWL, RDF, RDFS
+from rdflib.namespace import SKOS, OWL, RDF, RDFS, DCTERMS
 
 # Define standard namespaces
 ONTFS = Namespace("http://ontfs.example.org/core#")
@@ -11,5 +11,6 @@ def bind_namespaces(graph):
     graph.bind("owl", OWL)
     graph.bind("rdf", RDF)
     graph.bind("rdfs", RDFS)
+    graph.bind("dcterms", DCTERMS)
     graph.bind("ontfs", ONTFS)
     graph.bind("custom", CUSTOM)

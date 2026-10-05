@@ -2,10 +2,15 @@ import os
 import tempfile
 import json
 import unittest
+import subprocess
+import sys
+import importlib.util
+import shutil
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from pathlib import Path
 from ontfs.core import OntFS
+from ontfs.storage import atomic_write
 
 try:
     from ontfs.mcp_server import create_server
@@ -38,14 +43,14 @@ class TestOntFSCore(unittest.TestCase):
         query = f"""
         PREFIX custom: <http://ontfs.example.org/custom#>
         SELECT ?obj WHERE {{
-            <file://{Path(self.test_dir.name).resolve()}/file_a.txt> custom:dependsOn ?obj .
+            <{self.ontfs.graph.resolve_uri('./file_a.txt')}> custom:dependsOn ?obj .
         }}
         """
         results = list(self.ontfs.graph.query_graph(query))
         self.assertEqual(len(results), 1)
         
         # Check that the object resolved properly to an absolute file URI
-        expected_obj = f"file://{Path(self.test_dir.name).resolve()}/file_b.txt"
+        expected_obj = str(self.ontfs.graph.resolve_uri("./file_b.txt"))
         self.assertEqual(str(results[0][0]), expected_obj)
 
     def test_unlink(self):
@@ -100,7 +105,7 @@ class TestOntFSCore(unittest.TestCase):
         self.assertEqual(len(context["facts"]), 1)
         fact = context["facts"][0]
         self.assertEqual(fact["fact"]["id"], fact_id)
-        self.assertEqual(fact["fact"]["confidence"], "0.9")
+        self.assertAlmostEqual(fact["fact"]["confidence"], 0.9)
         self.assertEqual(fact["fact"]["assertedBy"], "build-agent")
         self.assertTrue(fact["fact"]["source"].endswith("/architecture.md"))
 
@@ -158,7 +163,10 @@ class TestOntFSCore(unittest.TestCase):
             "ontfs.watcher.snapshot",
             side_effect=[{"before": (1, 1)}, {"after": (2, 2)}],
         ), patch(
-            "ontfs.watcher.scan",
+            "ontfs.watcher.evict_files",
+        ), patch.object(
+            self.ontfs,
+            "scan",
             side_effect=[{"scanned": 1}, {"scanned": 2}],
         ) as scanner:
             results = self.ontfs.watch(interval=0, iterations=1)
@@ -188,11 +196,184 @@ class TestOntFSCore(unittest.TestCase):
         second = self.ontfs.remember(
             "./service.py", "custom:owner", "team-b", obj_is_literal=True
         )
+        self.ontfs.add_relation("custom:owner", functional=True)
         conflicts = self.ontfs.contradictions(mark=True)
         owner_conflict = next(c for c in conflicts if c["predicate"].endswith("#owner"))
         self.assertEqual(set(owner_conflict["objects"]), {"team-a", "team-b"})
         self.assertEqual(self.ontfs.fact(first)["status"], "disputed")
         self.assertEqual(self.ontfs.fact(second)["status"], "disputed")
+
+    def test_only_functional_properties_report_conflicts(self):
+        self.ontfs.remember("a", "custom:many", "one", obj_is_literal=True)
+        self.ontfs.remember("a", "custom:many", "two", obj_is_literal=True)
+        self.assertEqual(self.ontfs.contradictions(), [])
+        self.ontfs.add_relation("custom:one", functional=True)
+        self.ontfs.remember("a", "custom:one", "one", obj_is_literal=True)
+        self.ontfs.remember("a", "custom:one", "two", obj_is_literal=True)
+        self.assertEqual(len(self.ontfs.contradictions()), 1)
+
+    def test_atomic_write_preserves_original_when_replace_fails(self):
+        target = Path(self.test_dir.name) / "atomic.txt"
+        target.write_text("original", encoding="utf-8")
+        with patch("ontfs.storage.os.replace", side_effect=OSError("simulated crash")):
+            with self.assertRaises(OSError):
+                atomic_write(target, "replacement")
+        self.assertEqual(target.read_text(encoding="utf-8"), "original")
+
+    def test_concurrent_process_links_are_not_lost(self):
+        count = 5
+        script = (
+            "from ontfs.core import OntFS; import sys; "
+            "OntFS(sys.argv[1]).link('a', 'custom:r', sys.argv[2])"
+        )
+        repo_root = Path(__file__).resolve().parents[1]
+        processes = [
+            subprocess.Popen(
+                [sys.executable, "-c", script, self.test_dir.name, f"b{i}"],
+                cwd=repo_root,
+            )
+            for i in range(count)
+        ]
+        self.assertEqual([process.wait(timeout=15) for process in processes], [0] * count)
+        reloaded = OntFS(self.test_dir.name)
+        predicate = reloaded.graph.resolve_uri("custom:r")
+        self.assertEqual(len(list(reloaded.graph.graph.objects(None, predicate))), count)
+
+    def test_graph_file_uris_are_relocatable_and_migratable(self):
+        from rdflib import URIRef
+        old_path = f"file://{Path(self.test_dir.name).resolve()}/old.py"
+        predicate = self.ontfs.graph.resolve_uri("custom:uses")
+        self.ontfs.graph.graph.add((URIRef(old_path), predicate, URIRef("https://example.org")))
+        self.ontfs.graph.is_dirty = True
+        self.ontfs.graph.save()
+        result = self.ontfs.migrate_uris()
+        self.assertGreater(result["triples_changed"], 0)
+        migrated = OntFS(self.test_dir.name)
+        self.assertEqual(
+            str(migrated.graph.resolve_uri(old_path)),
+            str(migrated.graph.resolve_uri("./old.py")),
+        )
+        self.assertEqual(
+            len(list(migrated.graph.graph.subjects(predicate, URIRef("https://example.org")))), 1
+        )
+
+    def test_context_and_graph_boost_survive_directory_move(self):
+        from rdflib import URIRef
+        Path(self.test_dir.name, "design.md").write_text(
+            "Unique needleword architecture details.\n", encoding="utf-8"
+        )
+        self.ontfs.link("./design.md", "custom:documents", "custom:service")
+        original_context = self.ontfs.context("custom:service")
+        original_search = self.ontfs.search("needleword", related_to="custom:service")
+        moved = Path(self.test_dir.name, "relocated")
+        shutil.copytree(self.test_dir.name, moved, ignore=shutil.ignore_patterns("relocated"))
+        copied = OntFS(str(moved))
+        moved_context = copied.context("custom:service")
+        moved_search = copied.search("needleword", related_to="custom:service")
+        self.assertEqual(
+            original_context["facts"][0]["predicate"],
+            moved_context["facts"][0]["predicate"],
+        )
+        self.assertEqual(original_search["results"][0]["uri"], moved_search["results"][0]["uri"])
+        self.assertNotEqual(original_search["results"][0]["path"], moved_search["results"][0]["path"])
+
+    def test_entity_status_and_superseded_context_filter(self):
+        self.ontfs.link("./replacement.py", "custom:references", "./legacy.py")
+        self.ontfs.supersede("./replacement.py", "./legacy.py", note="Replaced module")
+        self.assertEqual(self.ontfs.graph.entity_status("./legacy.py"), "superseded")
+        self.assertEqual(self.ontfs.context("./replacement.py")["facts"], [])
+        visible = self.ontfs.context("./replacement.py", include_superseded=True)
+        self.assertEqual(len(visible["facts"]), 1)
+        self.ontfs.set_entity_status("./replacement.py", "verified")
+        self.assertEqual(self.ontfs.context("./replacement.py")["entity_status"], "verified")
+
+    def test_boolean_tag_selection_precedence_hierarchy_and_negation(self):
+        for name in ("Alpha", "Beta", "Experimental", "Project"):
+            self.ontfs.remember(
+                f"custom:tag:{name}", "skos:prefLabel", name,
+                obj_is_literal=True,
+            )
+        self.ontfs.link("custom:tag:Alpha", "skos:broader", "custom:tag:Project")
+        self.ontfs.link("custom:tag:Beta", "skos:broader", "custom:tag:Project")
+        self.ontfs.link("./one.py", "ontfs:hasTag", "custom:tag:Alpha")
+        self.ontfs.link("./two.py", "ontfs:hasTag", "custom:tag:Beta")
+        self.ontfs.link("./excluded.py", "ontfs:hasTag", "custom:tag:Experimental")
+        selected = self.ontfs.select("Project & !Experimental")
+        self.assertEqual(
+            {entry["path"] for entry in selected["resources"]},
+            {str(Path(self.test_dir.name, "one.py")), str(Path(self.test_dir.name, "two.py"))},
+        )
+        self.assertEqual(len(self.ontfs.select("Alpha | Beta")["resources"]), 2)
+        with self.assertRaisesRegex(ValueError, "unknown tag"):
+            self.ontfs.select("Unknown")
+
+    def test_boolean_selector_rejects_malformed_expression(self):
+        with self.assertRaises(ValueError):
+            self.ontfs.select("Alpha & (Beta")
+
+    def test_recall_is_budgeted_pointer_only_and_filters_superseded(self):
+        self.ontfs.remember("custom:concept:db", "skos:prefLabel", "database", obj_is_literal=True)
+        self.ontfs.remember("custom:concept:db", "skos:altLabel", "data store", obj_is_literal=True)
+        self.ontfs.link("./current.md", "custom:about", "custom:concept:db")
+        self.ontfs.remember("./current.md", "dcterms:abstract", "A safe short summary", obj_is_literal=True)
+        self.ontfs.remember("./current.md", "custom:payload", "PRIVATE_FILE_CONTENT", obj_is_literal=True)
+        self.ontfs.link("./old.md", "custom:about", "custom:concept:db")
+        self.ontfs.set_entity_status("./old.md", "superseded")
+        result = self.ontfs.recall("data store", search_text=False, limit=1)
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["results"][0]["path"], str(Path(self.test_dir.name, "current.md")))
+        self.assertEqual(result["results"][0]["summary"], "A safe short summary")
+        self.assertNotIn("PRIVATE_FILE_CONTENT", json.dumps(result))
+        self.assertGreater(result["stats"]["approx_tokens"], 0)
+
+    def test_recall_rejects_invalid_budget(self):
+        with self.assertRaises(ValueError):
+            self.ontfs.recall("query", max_tokens=0)
+
+    def test_shacl_max_count_marks_a_predicate_functional_for_conflicts(self):
+        shapes = Path(self.test_dir.name, ".ontfs.shapes.ttl")
+        shapes.write_text(
+            """@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://ontfs.example.org/custom#> .
+ex:Shape a sh:NodeShape ; sh:property [ sh:path ex:limited ; sh:maxCount 1 ] .
+""", encoding="utf-8"
+        )
+        self.ontfs.remember("a", "custom:limited", "one", obj_is_literal=True)
+        self.ontfs.remember("a", "custom:limited", "two", obj_is_literal=True)
+        self.assertEqual(len(self.ontfs.contradictions()), 1)
+
+    @unittest.skipUnless(importlib.util.find_spec("pyshacl"), "optional pyshacl dependency is unavailable")
+    def test_shacl_validation_and_proposal_cardinality(self):
+        shapes = Path(self.test_dir.name, ".ontfs.shapes.ttl")
+        shapes.write_text(
+            """@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://ontfs.example.org/custom#> .
+ex:Shape a sh:NodeShape ; sh:targetSubjectsOf ex:state ;
+  sh:property [ sh:path ex:state ; sh:maxCount 1 ; sh:in ( "active" "verified" ) ] .
+""", encoding="utf-8"
+        )
+        self.ontfs.remember("a", "custom:state", "active", obj_is_literal=True)
+        self.assertTrue(self.ontfs.validate()["conforms"])
+        proposal = self.ontfs.propose_link("a", "custom:state", "invalid", obj_is_literal=True)
+        self.assertFalse(self.ontfs.validate_proposal(proposal["id"])["valid"])
+
+    def test_multiple_evidence_records_and_status_history(self):
+        first = self.ontfs.remember(
+            "./claim", "custom:sourceFact", "value", obj_is_literal=True,
+            source="./one.md", confidence=0.6,
+        )
+        second = self.ontfs.remember(
+            "./claim", "custom:sourceFact", "value", obj_is_literal=True,
+            source="./two.md", confidence=0.9,
+        )
+        self.assertEqual(first, second)
+        record = self.ontfs.fact(first)
+        self.assertEqual(record["evidenceCount"], 2)
+        self.assertAlmostEqual(record["confidence"], 0.9)
+        self.ontfs.set_fact_status(first, "verified", "reviewed")
+        self.ontfs.set_fact_status(first, "stale", "outdated")
+        history = self.ontfs.fact(first)["statusHistory"]
+        self.assertEqual([event["to"] for event in history], ["verified", "stale"])
 
     def test_hybrid_search_boosts_graph_related_documents(self):
         Path(self.test_dir.name, "design.md").write_text(
@@ -229,18 +410,38 @@ class TestOntFSCore(unittest.TestCase):
         self.assertEqual(result["embedding_dimensions"], 64)
         self.assertEqual(result["results"][0]["path"], str(Path(self.test_dir.name, "storage.md")))
         self.assertGreater(result["results"][0]["vector_score"], 0)
+        self.assertEqual(result["embedding_backend"], "hashed")
 
         with self.assertRaises(ValueError):
             self.ontfs.search("database", vector=True, embedding_dimensions=0)
+
+    def test_embedding_cache_reuses_and_invalidates_content(self):
+        from ontfs.embeddings import HashedBackend, cached_embedding
+
+        backend = HashedBackend(32)
+        path = Path(self.test_dir.name, "cached.md")
+        path.write_text("first contents", encoding="utf-8")
+        with patch.object(backend, "embed", wraps=backend.embed) as embedder:
+            first = cached_embedding(self.ontfs, backend, path.read_text(), path)
+            cached_embedding(self.ontfs, backend, path.read_text(), path)
+            self.assertEqual(embedder.call_count, 1)
+            path.write_text("changed contents", encoding="utf-8")
+            second = cached_embedding(self.ontfs, backend, path.read_text(), path)
+            self.assertEqual(embedder.call_count, 2)
+        self.assertNotEqual(first, second)
+
+    def test_hashed_backend_preserves_existing_embedding_output(self):
+        from ontfs.embeddings import HashedBackend, embed
+        self.assertEqual(HashedBackend(64).embed(["same text"])[0], embed("same text", 64))
 
     @unittest.skipIf(create_server is None, "optional MCP dependency is unavailable")
     def test_mcp_server_exposes_agent_tools(self):
         server = create_server(self.test_dir.name)
         tools = set(server._tool_manager._tools)
         self.assertEqual(tools, {
-            "context", "search", "scan", "propose_link",
+            "context", "search", "scan", "select", "recall", "set_entity_status", "supersede", "propose_link",
             "validate_proposal", "commit_proposal", "set_fact_status",
-            "contradictions",
+            "contradictions", "validate",
         })
         self.assertEqual(server._tool_manager._tools["context"].fn(
             "./missing.py", depth=1, limit=5

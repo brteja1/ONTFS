@@ -121,8 +121,8 @@ ontfs watch . --interval 2
 ```
 
 Use `--iterations N` for a bounded run in automation or tests. The watcher is
-polling-based and currently rescans the selected path when any Python file
-changes.
+polling-based and rescans the selected path when supported text files change;
+changed-file embedding cache entries are evicted.
 
 Facts also have a lifecycle. Add an expiration time when linking, inspect or
 change a status explicitly, refresh expired facts, and find conflicts:
@@ -138,6 +138,24 @@ ontfs contradictions --mark
 Supported statuses are `asserted`, `verified`, `stale`, `disputed`, and
 `retracted`. Retraction preserves the fact record and its audit metadata but
 removes the assertion from active graph context.
+Only predicates declared with `owl:FunctionalProperty` are contradiction
+candidates. Declare one with `ontfs add-relation custom:owner --functional`.
+
+Graphs created before relocatable file identifiers should be migrated once:
+
+```bash
+ontfs migrate-uris --dry-run
+ontfs migrate-uris
+```
+
+Local files are stored as graph-relative `ontfs:file/...` identifiers, so the
+graph can move with its directory. Paths outside the graph directory remain
+absolute file URIs. Back up `.ontfs.ttl` before migration.
+
+Entity status is independent from fact status. Use `ontfs entity-status` and
+`ontfs supersede`; context omits superseded neighbors unless
+`--include-superseded` is set. Tag oriented applications can select resources
+with expressions such as `ontfs select '(Research | Project) & !Archived'`.
 
 ONTFS also provides bounded hybrid text/graph search:
 
@@ -155,8 +173,21 @@ ontfs search "durable data storage" --vector --embedding-dimensions 256
 ```
 
 This uses deterministic hashed text embeddings and combines cosine similarity
-with lexical and graph scores. It is a portable baseline; pluggable neural
-backends and persistent vector indexes remain future work.
+with lexical and graph scores. Embeddings are cached under `.ontfs.vectors/`
+and invalidated by the watcher when files change. Install `.[embed]` and pass
+`--embedding-backend sentence-transformers` to use a local neural model; the
+default hashed mode remains dependency-free. `--hashed` is the explicit name
+for hashed retrieval; `--vector` remains a compatibility alias.
+
+For pointer-oriented, bounded retrieval without returning file contents, use:
+
+```bash
+ontfs recall "data store" --limit 6 --max-tokens 1200
+```
+
+Recall matches ontology labels and synonyms, expands linked resources, and can
+include summaries stored under `dcterms:abstract`. Text search can be disabled
+with `--no-text-search`; results contain URIs, paths, reasons, and summaries.
 
 ## MCP integration
 
@@ -167,7 +198,8 @@ pip install -e '.[mcp]'
 ontfs-mcp --directory .
 ```
 
-The server exposes tools for context retrieval, hybrid/vector search, scanning,
-proposal validation and commit, fact status changes, and contradiction checks.
+The server exposes tools for context retrieval, hybrid/vector search, pointer
+recall, Boolean tag selection, scanning, SHACL validation, proposal validation
+and commit, lifecycle changes, and contradiction checks.
 The server is directory-scoped; mutations should use proposals and explicit
 commit tools.

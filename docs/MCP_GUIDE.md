@@ -28,7 +28,10 @@ hosts. The server also accepts `--transport sse` and
 | --- | --- |
 | `context` | Return bounded graph facts and provenance around an entity. |
 | `search` | Search local text with lexical, graph, and optional vector ranking. |
+| `recall` | Return token-budgeted graph pointers and ontology summaries, without file bodies. |
+| `select` | Select resources with Boolean expressions over hierarchical tags. |
 | `scan` | Index Python files, imports, and Git provenance. |
+| `validate` | Validate the graph against configured SHACL shapes. |
 | `propose_link` | Stage a relationship without changing the graph. |
 | `validate_proposal` | Check a pending proposal before mutation. |
 | `commit_proposal` | Apply a validated proposal. |
@@ -51,5 +54,7 @@ when a different graph is required.
 ## Embedding behavior
 
 The `search` tool can enable `vector=true`. ONTFS uses deterministic hashed
-embeddings by default, so no model download is required. This is a portable
-baseline for ranking, not a replacement for a neural embedding service.
+embeddings by default, so no model download is required. Vectors are cached in
+the graph directory and the watcher evicts changed-file entries. The CLI also
+supports `sentence-transformers` with the optional `.[embed]` extra; vector
+search returns rankings, while `recall` is the pointer-only bounded tool.

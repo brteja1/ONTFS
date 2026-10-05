@@ -3,7 +3,28 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from rdflib import Literal, RDF
 from ontfs.rdf_handler import OntFSGraph
+from ontfs.namespaces import ONTFS
+from ontfs.storage import atomic_write, locked
+
+
+def graph_transaction(method):
+    def wrapped(self, *args, **kwargs):
+        with self.graph.transaction():
+            return method(self, *args, **kwargs)
+    wrapped.__name__ = method.__name__
+    wrapped.__doc__ = method.__doc__
+    return wrapped
+
+
+def proposal_transaction(method):
+    def wrapped(self, *args, **kwargs):
+        with locked(self.proposals_path):
+            return method(self, *args, **kwargs)
+    wrapped.__name__ = method.__name__
+    wrapped.__doc__ = method.__doc__
+    return wrapped
 
 class OntFS:
     PROPOSALS_FILE = ".ontfs.proposals.json"
@@ -27,21 +48,24 @@ class OntFS:
         except FileExistsError as e:
             print(f"Error: {e}")
             
+    @graph_transaction
     def add_relation(self, uri: str, rel_type: str = None, 
                      is_transitive: bool = False, is_symmetric: bool = False,
-                     subprop_of: str = None, inverse_of: str = None):
+                     subprop_of: str = None, inverse_of: str = None,
+                     functional: bool = False):
         self.graph.define_relation(
             uri_str=uri,
             rel_type=rel_type,
             is_transitive=is_transitive,
             is_symmetric=is_symmetric,
             subprop_of=subprop_of,
-            inverse_of=inverse_of
+            inverse_of=inverse_of, functional=functional
         )
         self.graph.save()
         print(f"Relation {uri} defined successfully.")
 
 
+    @graph_transaction
     def add_relations(self, file_path: str):
         import json
         with open(file_path, 'r') as f:
@@ -54,17 +78,20 @@ class OntFS:
                 is_transitive=rel.get('transitive', False),
                 is_symmetric=rel.get('symmetric', False),
                 subprop_of=rel.get('subprop_of'),
-                inverse_of=rel.get('inverse') or rel.get('inverse_of')
+                inverse_of=rel.get('inverse') or rel.get('inverse_of'),
+                functional=rel.get('functional', False)
             )
         self.graph.save()
         print(f"Batch defined {len(relations)} relations successfully.")
 
+    @graph_transaction
     def link(self, subject: str, predicate: str, obj: str, obj_is_literal: bool = False):
         fact_id = self.graph.add_triple(subject, predicate, obj, obj_is_literal)
         self.graph.save()
         print(f"Linked: {subject} -[{predicate}]-> {obj}")
         return fact_id
 
+    @graph_transaction
     def remember(self, subject: str, predicate: str, obj: str,
                  obj_is_literal: bool = False, source: str = None,
                  confidence: float = None, asserted_by: str = None,
@@ -86,45 +113,137 @@ class OntFS:
         self.graph.save()
         return fact_id
 
-    def context(self, entity: str, depth: int = 1, limit: int = 50):
-        return self.graph.context(entity, depth=depth, limit=limit)
+    def context(self, entity: str, depth: int = 1, limit: int = 50,
+                include_superseded: bool = False):
+        return self.graph.context(
+            entity, depth=depth, limit=limit,
+            include_superseded=include_superseded,
+        )
 
     def context_json(self, entity: str, depth: int = 1, limit: int = 50):
         return json.dumps(self.context(entity, depth=depth, limit=limit), indent=2)
 
+    @graph_transaction
+    def set_entity_status(self, entity, status, reason=None):
+        return self._set_entity_status(entity, status, reason)
+
+    def _set_entity_status(self, entity, status, reason=None):
+        allowed = {"active", "verified", "experimental", "stale", "superseded", "deprecated"}
+        if status not in allowed:
+            raise ValueError(f"entity status must be one of: {', '.join(sorted(allowed))}")
+        node = self.graph.resolve_uri(entity)
+        self.graph.define_relation("ontfs:entityStatus", rel_type="datatype", functional=True)
+        for old in list(self.graph.graph.objects(node, ONTFS.entityStatus)):
+            if str(old) == status:
+                return str(old)
+            old_fact = self.graph.fact_identifier(node, ONTFS.entityStatus, old)
+            if (self.graph.fact_uri(old_fact), RDF.type, RDF.Statement) in self.graph.graph:
+                self.graph.set_fact_status(old_fact, "retracted", "entity status changed")
+            else:
+                self.graph.graph.remove((node, ONTFS.entityStatus, old))
+        literal = Literal(status)
+        self.graph.graph.add((node, ONTFS.entityStatus, literal))
+        self.graph.record_fact(
+            node, ONTFS.entityStatus, literal,
+            asserted_by="ontfs", note=reason,
+        )
+        return status
+
+    @graph_transaction
+    def supersede(self, new_entity, old_entity, source=None, note=None):
+        self.graph.define_relation("ontfs:supersedes", rel_type="object", inverse_of="ontfs:supersededBy")
+        self.graph.define_relation("ontfs:supersededBy", rel_type="object", inverse_of="ontfs:supersedes")
+        self.graph.add_triple(new_entity, "ontfs:supersedes", old_entity)
+        new_node = self.graph.resolve_uri(new_entity)
+        old_node = self.graph.resolve_uri(old_entity)
+        relationship_fact = self.graph.fact_identifier(
+            new_node, self.graph.resolve_uri("ontfs:supersedes"), old_node
+        )
+        fact = self.graph.fact_uri(relationship_fact)
+        if source is not None:
+            self.graph.graph.add((fact, ONTFS.source, self.graph.resolve_uri(source)))
+        if note is not None:
+            self.graph.graph.add((fact, ONTFS.note, Literal(note)))
+        self._set_entity_status(old_entity, "superseded", f"superseded by {new_entity}")
+        return relationship_fact
+
+    @proposal_transaction
+    @graph_transaction
+    def migrate_uris(self, dry_run=False):
+        """Convert local absolute file URIs and update proposal fact references."""
+        result = self.graph.migrate_uris()
+        if dry_run:
+            # transaction must not persist the in-memory preview
+            self.graph._load()
+            return result
+        fact_remap = result["fact_ids"]
+        if fact_remap and self.proposals_path.exists():
+            proposals = self._load_proposals()
+            for proposal in proposals:
+                if proposal.get("fact_id") in fact_remap:
+                    proposal["fact_id"] = fact_remap[proposal["fact_id"]]
+                for event in proposal.get("history", []):
+                    if event.get("fact_id") in fact_remap:
+                        event["fact_id"] = fact_remap[event["fact_id"]]
+            self._save_proposals(proposals)
+        return result
+
+    @graph_transaction
+    def migrate_evidence(self):
+        return self.graph.migrate_evidence()
+
     def search(self, query, path=".", limit=20, related_to=None, depth=1,
-               vector=False, embedding_dimensions=256):
+               vector=False, embedding_dimensions=256, embedding_backend="hashed",
+               embedding_model=None):
         from ontfs.search import search
         return search(
             self, query, path=path, limit=limit,
             related_to=related_to, depth=depth, vector=vector,
             embedding_dimensions=embedding_dimensions,
+            embedding_backend=embedding_backend, embedding_model=embedding_model,
         )
+
+    def select(self, expression, predicate="ontfs:hasTag", limit=100):
+        from ontfs.select import select
+        return select(self, expression, predicate=predicate, limit=limit)
+
+    def recall(self, query, limit=6, summary_predicate="dcterms:abstract",
+               search_text=True, vector=False, max_tokens=1200):
+        from ontfs.recall import recall
+        return recall(self, query, limit=limit, summary_predicate=summary_predicate,
+                      search_text=search_text, vector=vector, max_tokens=max_tokens)
 
     def fact(self, fact_id):
         return self.graph.fact_record(fact_id)
 
+    @graph_transaction
     def set_fact_status(self, fact_id, status, reason=None):
         record = self.graph.set_fact_status(fact_id, status, reason=reason)
         self.graph.save()
         return record
 
+    @graph_transaction
     def refresh_stale(self):
         stale = self.graph.refresh_stale()
         self.graph.save()
         return stale
 
     def contradictions(self, mark=False):
-        conflicts = self.graph.contradictions()
         if mark:
-            for conflict in conflicts:
-                for fact in conflict["facts"]:
-                    self.graph.set_fact_status(
-                        fact["id"], "disputed", "conflicting object for subject and predicate"
-                    )
-            self.graph.save()
+            return self._mark_contradictions()
+        return self.graph.contradictions()
+
+    @graph_transaction
+    def _mark_contradictions(self):
+        conflicts = self.graph.contradictions()
+        for conflict in conflicts:
+            for fact in conflict["facts"]:
+                self.graph.set_fact_status(
+                    fact["id"], "disputed", "conflicting object for subject and predicate"
+                )
         return conflicts
 
+    @graph_transaction
     def scan(self, path=".", include_git=True):
         from ontfs.scanner import scan
         return scan(self, path=path, include_git=include_git)
@@ -143,21 +262,21 @@ class OntFS:
     def _load_proposals(self):
         if not self.proposals_path.exists():
             return []
-        with self.proposals_path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
+        with locked(self.proposals_path):
+            with self.proposals_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
         if not isinstance(data, list):
             raise ValueError(f"{self.PROPOSALS_FILE} must contain a JSON array")
         return data
 
     def _save_proposals(self, proposals):
-        with self.proposals_path.open("w", encoding="utf-8") as handle:
-            json.dump(proposals, handle, indent=2)
-            handle.write("\n")
+        atomic_write(self.proposals_path, json.dumps(proposals, indent=2) + "\n")
 
     @staticmethod
     def _now():
         return datetime.now(timezone.utc).isoformat()
 
+    @proposal_transaction
     def propose_link(self, subject: str, predicate: str, obj: str,
                      obj_is_literal: bool = False, source: str = None,
                      confidence: float = None, asserted_by: str = None,
@@ -221,7 +340,34 @@ class OntFS:
             self._validate_proposal(proposal)
         except ValueError as error:
             return {"id": proposal_id, "valid": False, "error": str(error)}
+        from ontfs.validation import load_shapes, validate_graph
+        shapes, _ = load_shapes(self.directory)
+        if shapes is not None:
+            candidate = self.graph.graph.__class__()
+            for triple in self.graph.graph:
+                candidate.add(triple)
+            subject = self.graph.resolve_uri(proposal["subject"])
+            predicate = self.graph.resolve_uri(proposal["predicate"])
+            if proposal.get("literal"):
+                from rdflib import Literal
+                obj = Literal(proposal["object"])
+            else:
+                obj = self.graph.resolve_uri(proposal["object"])
+            candidate.add((subject, predicate, obj))
+            try:
+                validation = validate_graph(candidate, self.directory)
+            except RuntimeError as error:
+                return {"id": proposal_id, "valid": False, "error": str(error)}
+            if not validation["conforms"]:
+                return {
+                    "id": proposal_id, "valid": False,
+                    "violations": validation["violations"],
+                }
         return {"id": proposal_id, "valid": True, "status": proposal["status"]}
+
+    def validate(self, shapes_path=None):
+        from ontfs.validation import validate_graph
+        return validate_graph(self.graph.graph, self.directory, shapes_path)
 
     def _find_proposal(self, proposal_id):
         for proposal in self._load_proposals():
@@ -238,11 +384,15 @@ class OntFS:
                 return
         raise ValueError(f"proposal not found: {proposal.get('id')}")
 
+    @proposal_transaction
+    @graph_transaction
     def commit_proposal(self, proposal_id):
         proposal = self._find_proposal(proposal_id)
         if proposal.get("status") != "proposed":
             raise ValueError(f"proposal is already {proposal.get('status')}")
-        self._validate_proposal(proposal)
+        validation = self.validate_proposal(proposal_id)
+        if not validation.get("valid"):
+            raise ValueError(json.dumps(validation, sort_keys=True))
         fact_id = self.remember(
             proposal["subject"], proposal["predicate"], proposal["object"],
             obj_is_literal=proposal.get("literal", False),
@@ -259,6 +409,7 @@ class OntFS:
         self._update_proposal(proposal)
         return proposal
 
+    @proposal_transaction
     def reject_proposal(self, proposal_id, reason=None):
         proposal = self._find_proposal(proposal_id)
         if proposal.get("status") != "proposed":
@@ -274,6 +425,7 @@ class OntFS:
         return proposal
 
 
+    @graph_transaction
     def batch_links(self, file_path: str):
         import json
         with open(file_path, 'r') as f:
@@ -284,6 +436,7 @@ class OntFS:
         self.graph.save()
         print(f"Batch linked {len(links)} entities successfully.")
 
+    @graph_transaction
     def batch_unlinks(self, file_path: str):
         import json
         with open(file_path, 'r') as f:
@@ -294,6 +447,7 @@ class OntFS:
         self.graph.save()
         print(f"Batch unlinked {len(unlinks)} entities successfully.")
 
+    @graph_transaction
     def unlink(self, subject: str, predicate: str, obj: str):
         self.graph.remove_triple(subject, predicate, obj)
         self.graph.save()

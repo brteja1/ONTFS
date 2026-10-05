@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from ontfs.core import OntFS
 
 # Define the standard URIs used for our TagFS emulation
-TAG_PREFIX = "tag:"
+TAG_PREFIX = "custom:tag:"
 HAS_TAG_RELATION = "ontfs:hasTag"
 BROADER_RELATION = "skos:broader"
 
@@ -73,31 +73,11 @@ class TagFSWrapper:
         """
         tagfs lsresources "Project"
         Finds all resources tagged with 'Project' or any of its descendants.
-        (For simplicity, this emulation currently supports single tags rather than complex boolean expressions like Project&Development).
         """
-        tag_uri = f"{TAG_PREFIX}{tag_expr}"
-        
-        # SPARQL query: Find files that have a tag which is either the target tag
-        # OR has a skos:broader path leading to the target tag.
-        query = f"""
-        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-        PREFIX ontfs: <http://ontfs.example.org/core#>
-        
-        SELECT DISTINCT ?file WHERE {{
-            ?tag skos:broader* <http://ontfs.example.org/custom#{tag_expr}> .
-            ?file ontfs:hasTag ?tag .
-        }}
-        """
-        
         try:
-            results = self.ontfs.graph.query_graph(query)
-            for row in results:
-                # Format output to look like standard paths
-                uri = str(row[0])
-                if uri.startswith("file://"):
-                    print(uri.replace("file://", ""))
-                else:
-                    print(uri)
+            result = self.ontfs.select(tag_expr)
+            for resource in result["resources"]:
+                print(resource["path"])
         except Exception as e:
             print(f"Query Error: {e}")
 
