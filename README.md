@@ -86,8 +86,8 @@ ontfs context ./service.py --depth 2 --limit 30
 
 The response includes neighboring RDF facts and their evidence, confidence,
 fact ID, and observation time. This is intended as the first layer of an
-agent-native memory workflow; repository scanning, fact validation, and
-proposal/commit workflows are described in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+agent-native memory workflow; the remaining roadmap is described in
+[FUTURE.md](FUTURE.md).
 
 Agents can stage a mutation for review before it changes the graph:
 
