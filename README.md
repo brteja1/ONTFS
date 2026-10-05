@@ -33,6 +33,7 @@ Because OntFS is a generalized graph, it can effortlessly emulate stricter syste
 For detailed guides on how to use the CLI and model data, please see the internal documentation:
 *   [Ontology Guide](docs/ONTOLOGY_GUIDE.md): Learn how to define relations and link entities.
 *   [Technical Design](DESIGN.md): Deep dive into the architecture and internal data model.
+*   [MCP Guide](docs/MCP_GUIDE.md): Configure the optional agent-tool server.
 *   [TagFS Emulation](examples/tagfs_emulation/README.md): See how to build a tagging system on top of OntFS.
 
 ## 🚀 Quick Start

@@ -203,3 +203,6 @@ The MCP server exposes `context`, `search`, `scan`, proposal workflow, fact
 lifecycle, and contradiction tools. Each server instance is scoped to the
 directory passed through `--directory`; the core ONTFS package remains usable
 without installing MCP.
+
+See the dedicated [MCP Guide](MCP_GUIDE.md) for the complete tool contract,
+transport options, and safe mutation workflow.
