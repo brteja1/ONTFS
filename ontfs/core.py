@@ -335,6 +335,8 @@ class OntFS:
         return proposals
 
     def validate_proposal(self, proposal_id):
+        from collections import Counter
+
         proposal = self._find_proposal(proposal_id)
         try:
             self._validate_proposal(proposal)
@@ -362,20 +364,25 @@ class OntFS:
                 validation = validate_graph(candidate, self.directory)
             except RuntimeError as error:
                 return {"id": proposal_id, "valid": False, "error": str(error)}
-            baseline_violations = {
-                (
+            def violation_key(item):
+                return (
                     item["focus_node"], item["path"], item["message"],
-                    item["source_constraint"], item["value_count"],
+                    item["source_constraint"], item["source_shape"],
+                    item["value"], item["value_count"],
                 )
-                for item in baseline["violations"]
-            }
-            new_violations = [
-                item for item in validation["violations"]
-                if (
-                    item["focus_node"], item["path"], item["message"],
-                    item["source_constraint"], item["value_count"],
-                ) not in baseline_violations
-            ]
+
+            baseline_violations = Counter(
+                violation_key(item) for item in baseline["violations"]
+            )
+            candidate_violations = Counter(
+                violation_key(item) for item in validation["violations"]
+            )
+            new_violations = []
+            for item in validation["violations"]:
+                key = violation_key(item)
+                if candidate_violations[key] > baseline_violations[key]:
+                    new_violations.append(item)
+                    candidate_violations[key] -= 1
             if new_violations:
                 return {
                     "id": proposal_id, "valid": False,

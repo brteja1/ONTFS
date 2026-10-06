@@ -389,6 +389,25 @@ ex:Shape a sh:NodeShape ; sh:targetSubjectsOf ex:state ;
 
         self.assertFalse(self.ontfs.validate_proposal(proposal["id"])["valid"])
 
+    @unittest.skipUnless(importlib.util.find_spec("pyshacl"), "optional pyshacl dependency is unavailable")
+    def test_shacl_proposal_detects_new_disallowed_value_on_existing_violation(self):
+        shapes = Path(self.test_dir.name, ".ontfs.shapes.ttl")
+        shapes.write_text(
+            """@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://ontfs.example.org/custom#> .
+ex:Shape a sh:NodeShape ; sh:targetSubjectsOf ex:state ;
+  sh:property [ sh:path ex:state ; sh:in ( "active" "verified" ) ] .
+""", encoding="utf-8"
+        )
+        self.ontfs.remember("a.md", "custom:state", "invalid-one", obj_is_literal=True)
+        proposal = self.ontfs.propose_link(
+            "a.md", "custom:state", "invalid-two", obj_is_literal=True
+        )
+
+        result = self.ontfs.validate_proposal(proposal["id"])
+        self.assertFalse(result["valid"])
+        self.assertEqual(len(result["violations"]), 1)
+
     def test_multiple_evidence_records_and_status_history(self):
         first = self.ontfs.remember(
             "./claim", "custom:sourceFact", "value", obj_is_literal=True,
