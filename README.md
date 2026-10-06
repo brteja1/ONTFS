@@ -38,8 +38,11 @@ For detailed guides on how to use the CLI and model data, please see the interna
 
 ## 🚀 Quick Start
 ```bash
-# Install the CLI
-pip install -e .
+# Create .venv and install ONTFS plus its core dependencies
+make deps
+
+# Activate the project environment to use the ontfs command
+source .venv/bin/activate
 
 # Install optional integrations only when needed:
 make deps-mcp    # MCP server support
@@ -64,6 +67,11 @@ ontfs batch-link links.json
 # Link files
 ontfs link ./backend.py custom:dependsOn ./database.py
 ```
+
+The `make deps*` targets install into the project-local `.venv` environment,
+so they work when the system Python is externally managed under PEP 668. Use
+`VENV=path/to/env` to choose a different virtual environment location, or
+`PYTHON=python3.12` to select the Python used to create it.
 
 ## 🧪 Testing
 Run the test suite using the provided bash script:
