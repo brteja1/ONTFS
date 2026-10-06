@@ -363,13 +363,18 @@ class OntFS:
             except RuntimeError as error:
                 return {"id": proposal_id, "valid": False, "error": str(error)}
             baseline_violations = {
-                (item["focus_node"], item["path"], item["message"])
+                (
+                    item["focus_node"], item["path"], item["message"],
+                    item["source_constraint"], item["value_count"],
+                )
                 for item in baseline["violations"]
             }
             new_violations = [
                 item for item in validation["violations"]
-                if (item["focus_node"], item["path"], item["message"])
-                not in baseline_violations
+                if (
+                    item["focus_node"], item["path"], item["message"],
+                    item["source_constraint"], item["value_count"],
+                ) not in baseline_violations
             ]
             if new_violations:
                 return {

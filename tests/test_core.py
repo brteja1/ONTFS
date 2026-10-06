@@ -373,6 +373,22 @@ ex:Shape a sh:NodeShape ; sh:targetSubjectsOf ex:state ;
         self.assertFalse(self.ontfs.validate()["conforms"])
         self.assertTrue(self.ontfs.validate_proposal(proposal["id"])["valid"])
 
+    @unittest.skipUnless(importlib.util.find_spec("pyshacl"), "optional pyshacl dependency is unavailable")
+    def test_shacl_proposal_rejects_worsened_max_count_violation(self):
+        shapes = Path(self.test_dir.name, ".ontfs.shapes.ttl")
+        shapes.write_text(
+            """@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://ontfs.example.org/custom#> .
+ex:Shape a sh:NodeShape ; sh:targetSubjectsOf ex:state ;
+  sh:property [ sh:path ex:state ; sh:maxCount 1 ] .
+""", encoding="utf-8"
+        )
+        self.ontfs.remember("a.md", "custom:state", "one", obj_is_literal=True)
+        self.ontfs.remember("a.md", "custom:state", "two", obj_is_literal=True)
+        proposal = self.ontfs.propose_link("a.md", "custom:state", "three", obj_is_literal=True)
+
+        self.assertFalse(self.ontfs.validate_proposal(proposal["id"])["valid"])
+
     def test_multiple_evidence_records_and_status_history(self):
         first = self.ontfs.remember(
             "./claim", "custom:sourceFact", "value", obj_is_literal=True,

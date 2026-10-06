@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from rdflib import Graph
+from rdflib import Graph, URIRef
 from rdflib.namespace import SH
 
 
@@ -58,10 +58,16 @@ def validate_graph(data_graph, directory, shapes_path=None):
         path_node = next(report.objects(result, SH.resultPath), None)
         message = next(report.objects(result, SH.resultMessage), None)
         if focus is not None:
+            constraint = next(report.objects(result, SH.sourceConstraintComponent), None)
+            value_count = None
+            if constraint == SH.MaxCountConstraintComponent and isinstance(path_node, URIRef):
+                value_count = len(set(data_graph.objects(focus, path_node)))
             violations.append({
                 "focus_node": str(focus),
                 "path": str(path_node) if path_node is not None else None,
                 "message": str(message) if message is not None else "SHACL constraint violation",
+                "source_constraint": str(constraint) if constraint is not None else None,
+                "value_count": value_count,
             })
     return {
         "conforms": bool(conforms),
