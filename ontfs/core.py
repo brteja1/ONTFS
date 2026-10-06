@@ -343,6 +343,10 @@ class OntFS:
         from ontfs.validation import load_shapes, validate_graph
         shapes, _ = load_shapes(self.directory)
         if shapes is not None:
+            try:
+                baseline = validate_graph(self.graph.graph, self.directory)
+            except RuntimeError as error:
+                return {"id": proposal_id, "valid": False, "error": str(error)}
             candidate = self.graph.graph.__class__()
             for triple in self.graph.graph:
                 candidate.add(triple)
@@ -358,10 +362,19 @@ class OntFS:
                 validation = validate_graph(candidate, self.directory)
             except RuntimeError as error:
                 return {"id": proposal_id, "valid": False, "error": str(error)}
-            if not validation["conforms"]:
+            baseline_violations = {
+                (item["focus_node"], item["path"], item["message"])
+                for item in baseline["violations"]
+            }
+            new_violations = [
+                item for item in validation["violations"]
+                if (item["focus_node"], item["path"], item["message"])
+                not in baseline_violations
+            ]
+            if new_violations:
                 return {
                     "id": proposal_id, "valid": False,
-                    "violations": validation["violations"],
+                    "violations": new_violations,
                 }
         return {"id": proposal_id, "valid": True, "status": proposal["status"]}
 
