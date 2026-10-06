@@ -374,6 +374,30 @@ ex:Shape a sh:NodeShape ; sh:targetSubjectsOf ex:state ;
         self.assertTrue(self.ontfs.validate_proposal(proposal["id"])["valid"])
 
     @unittest.skipUnless(importlib.util.find_spec("pyshacl"), "optional pyshacl dependency is unavailable")
+    def test_shacl_proposal_ignores_preexisting_uri_allowed_values_violation(self):
+        shapes = Path(self.test_dir.name, ".ontfs.shapes.ttl")
+        shapes.write_text(
+            """@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://ontfs.example.org/custom#> .
+ex:Shape a sh:NodeShape ; sh:targetSubjectsOf ex:state ;
+  sh:property [ sh:path ex:state ; sh:in ( ex:active ex:verified ) ] .
+""", encoding="utf-8"
+        )
+        self.ontfs.remember("a.md", "custom:state", "custom:invalid")
+        unrelated = self.ontfs.propose_link("b.md", "custom:about", "custom:project")
+
+        self.assertFalse(self.ontfs.validate()["conforms"])
+        self.assertTrue(self.ontfs.validate_proposal(unrelated["id"])["valid"])
+
+        invalid = self.ontfs.propose_link("a.md", "custom:state", "custom:alsoInvalid")
+        result = self.ontfs.validate_proposal(invalid["id"])
+        self.assertFalse(result["valid"])
+        self.assertEqual(len(result["violations"]), 1)
+        self.assertEqual(result["violations"][0]["value"], str(
+            self.ontfs.graph.resolve_uri("custom:alsoInvalid")
+        ))
+
+    @unittest.skipUnless(importlib.util.find_spec("pyshacl"), "optional pyshacl dependency is unavailable")
     def test_shacl_proposal_rejects_worsened_max_count_violation(self):
         shapes = Path(self.test_dir.name, ".ontfs.shapes.ttl")
         shapes.write_text(

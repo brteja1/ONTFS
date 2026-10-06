@@ -350,6 +350,8 @@ class OntFS:
             except RuntimeError as error:
                 return {"id": proposal_id, "valid": False, "error": str(error)}
             candidate = self.graph.graph.__class__()
+            for prefix, namespace in self.graph.graph.namespaces():
+                candidate.bind(prefix, namespace, replace=True)
             for triple in self.graph.graph:
                 candidate.add(triple)
             subject = self.graph.resolve_uri(proposal["subject"])
@@ -365,8 +367,10 @@ class OntFS:
             except RuntimeError as error:
                 return {"id": proposal_id, "valid": False, "error": str(error)}
             def violation_key(item):
+                # Messages are presentation text: prefixes and list ordering
+                # may change without changing the underlying violation.
                 return (
-                    item["focus_node"], item["path"], item["message"],
+                    item["focus_node"], item["path"],
                     item["source_constraint"], item["source_shape"],
                     item["value"], item["value_count"],
                 )
