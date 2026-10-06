@@ -49,7 +49,7 @@ def validate_graph(data_graph, directory, shapes_path=None):
         from pyshacl import validate
     except ImportError as error:
         raise RuntimeError("SHACL validation requires the optional `ontfs[shacl]` extra") from error
-    conforms, _, report = validate(
+    conforms, report, _ = validate(
         data_graph=data_graph, shacl_graph=shapes, inference="none",
     )
     violations = []
